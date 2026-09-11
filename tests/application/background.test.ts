@@ -31,13 +31,13 @@ test('isInjectablePageUrl rejects non-injectable URLs and schemes', () => {
 test('openCurrentWindowSwitcher stops before window query if active tab is missing or invalid', async () => {
   const queriedWindows: number[] = [];
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: async () => null,
-    queryWindowTabs: async (windowId) => {
+    queryActiveTab: () => Promise.resolve(null),
+    queryWindowTabs: (windowId) => {
       queriedWindows.push(windowId);
-      return [];
+      return Promise.resolve([]);
     },
-    sendOpenMessage: async () => {},
-    injectSwitcher: async () => {},
+    sendOpenMessage: () => Promise.resolve(),
+    injectSwitcher: () => Promise.resolve(),
   };
 
   const result = await openCurrentWindowSwitcher(port);
@@ -57,13 +57,13 @@ test('openCurrentWindowSwitcher stops before window query if active tab metadata
   for (const malformed of malformedTabs) {
     let windowQueried = false;
     const port: SwitcherBackgroundPort = {
-      queryActiveTab: async () => malformed,
-      queryWindowTabs: async () => {
+      queryActiveTab: () => Promise.resolve(malformed),
+      queryWindowTabs: () => {
         windowQueried = true;
-        return [];
+        return Promise.resolve([]);
       },
-      sendOpenMessage: async () => {},
-      injectSwitcher: async () => {},
+      sendOpenMessage: () => Promise.resolve(),
+      injectSwitcher: () => Promise.resolve(),
     };
 
     const result = await openCurrentWindowSwitcher(port);
@@ -76,17 +76,18 @@ test('openCurrentWindowSwitcher stops before window query if active tab metadata
 test('openCurrentWindowSwitcher stops before window query if active tab has non-injectable URL', async () => {
   let windowQueried = false;
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: async () => ({
-      id: 1,
-      windowId: 1,
-      url: 'chrome://extensions',
-    }),
-    queryWindowTabs: async () => {
+    queryActiveTab: () =>
+      Promise.resolve({
+        id: 1,
+        windowId: 1,
+        url: 'chrome://extensions',
+      }),
+    queryWindowTabs: () => {
       windowQueried = true;
-      return [];
+      return Promise.resolve([]);
     },
-    sendOpenMessage: async () => {},
-    injectSwitcher: async () => {},
+    sendOpenMessage: () => Promise.resolve(),
+    injectSwitcher: () => Promise.resolve(),
   };
 
   const result = await openCurrentWindowSwitcher(port);
@@ -100,34 +101,32 @@ test('openCurrentWindowSwitcher sends open message without injection when listen
   const receivedMessages: OpenSwitcherMessage[] = [];
 
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: async () => {
+    queryActiveTab: () => {
       callLog.push('queryActiveTab');
-      return { id: 10, windowId: 1, url: 'https://example.com/page' };
+      return Promise.resolve({ id: 10, windowId: 1, url: 'https://example.com/page' });
     },
-    queryWindowTabs: async (windowId) => {
+    queryWindowTabs: (windowId) => {
       callLog.push(`queryWindowTabs:${windowId}`);
-      return [
+      return Promise.resolve([
         { id: 10, windowId: 1, title: 'Current Tab', lastAccessed: 500 },
         { id: 20, windowId: 1, title: 'Other Tab', lastAccessed: 400 },
-      ];
+      ]);
     },
-    sendOpenMessage: async (tabId, message) => {
+    sendOpenMessage: (tabId, message) => {
       callLog.push(`sendOpenMessage:${tabId}`);
       receivedMessages.push(message);
+      return Promise.resolve();
     },
-    injectSwitcher: async (tabId) => {
+    injectSwitcher: (tabId) => {
       callLog.push(`injectSwitcher:${tabId}`);
+      return Promise.resolve();
     },
   };
 
   const result = await openCurrentWindowSwitcher(port);
 
   expect(result).toBe(true);
-  expect(callLog).toEqual([
-    'queryActiveTab',
-    'queryWindowTabs:1',
-    'sendOpenMessage:10',
-  ]);
+  expect(callLog).toEqual(['queryActiveTab', 'queryWindowTabs:1', 'sendOpenMessage:10']);
   expect(receivedMessages).toHaveLength(1);
   const delivered = receivedMessages[0];
   expect(delivered?.type).toBe('OPEN_SWITCHER');
@@ -139,20 +138,25 @@ test('openCurrentWindowSwitcher injects once then resends when initial send fail
   let sendAttempt = 0;
 
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: async () => ({ id: 5, windowId: 2, url: 'https://app.dev' }),
-    queryWindowTabs: async () => [
-      { id: 5, windowId: 2, title: 'Active' },
-      { id: 6, windowId: 2, title: 'Second Tab', lastAccessed: 100 },
-    ],
-    sendOpenMessage: async (tabId) => {
+    queryActiveTab: () => Promise.resolve({ id: 5, windowId: 2, url: 'https://app.dev' }),
+    queryWindowTabs: () =>
+      Promise.resolve([
+        { id: 5, windowId: 2, title: 'Active' },
+        { id: 6, windowId: 2, title: 'Second Tab', lastAccessed: 100 },
+      ]),
+    sendOpenMessage: (tabId) => {
       sendAttempt++;
       callLog.push(`sendOpenMessage:${tabId}:attempt${sendAttempt}`);
       if (sendAttempt === 1) {
-        throw new Error('Could not establish connection. Receiving end does not exist.');
+        return Promise.reject(
+          new Error('Could not establish connection. Receiving end does not exist.'),
+        );
       }
+      return Promise.resolve();
     },
-    injectSwitcher: async (tabId) => {
+    injectSwitcher: (tabId) => {
       callLog.push(`injectSwitcher:${tabId}`);
+      return Promise.resolve();
     },
   };
 
@@ -170,15 +174,15 @@ test('openCurrentWindowSwitcher returns false without throwing when injection fa
   const callLog: string[] = [];
 
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: async () => ({ id: 5, windowId: 2, url: 'https://app.dev' }),
-    queryWindowTabs: async () => [{ id: 5, windowId: 2, title: 'Active' }],
-    sendOpenMessage: async (tabId) => {
+    queryActiveTab: () => Promise.resolve({ id: 5, windowId: 2, url: 'https://app.dev' }),
+    queryWindowTabs: () => Promise.resolve([{ id: 5, windowId: 2, title: 'Active' }]),
+    sendOpenMessage: (tabId) => {
       callLog.push(`sendOpenMessage:${tabId}`);
-      throw new Error('Connection failed');
+      return Promise.reject(new Error('Connection failed'));
     },
-    injectSwitcher: async (tabId) => {
+    injectSwitcher: (tabId) => {
       callLog.push(`injectSwitcher:${tabId}`);
-      throw new Error('Script injection blocked');
+      return Promise.reject(new Error('Script injection blocked'));
     },
   };
 
@@ -193,15 +197,16 @@ test('openCurrentWindowSwitcher returns false without throwing when second send 
   let sendAttempts = 0;
 
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: async () => ({ id: 5, windowId: 2, url: 'https://app.dev' }),
-    queryWindowTabs: async () => [{ id: 5, windowId: 2, title: 'Active' }],
-    sendOpenMessage: async (tabId) => {
+    queryActiveTab: () => Promise.resolve({ id: 5, windowId: 2, url: 'https://app.dev' }),
+    queryWindowTabs: () => Promise.resolve([{ id: 5, windowId: 2, title: 'Active' }]),
+    sendOpenMessage: (tabId) => {
       sendAttempts++;
       callLog.push(`sendOpenMessage:${tabId}:attempt${sendAttempts}`);
-      throw new Error('Send failed');
+      return Promise.reject(new Error('Send failed'));
     },
-    injectSwitcher: async (tabId) => {
+    injectSwitcher: (tabId) => {
       callLog.push(`injectSwitcher:${tabId}`);
+      return Promise.resolve();
     },
   };
 
@@ -217,12 +222,10 @@ test('openCurrentWindowSwitcher returns false without throwing when second send 
 
 test('openCurrentWindowSwitcher propagates query failures from active tab query', async () => {
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: async () => {
-      throw new Error('Tabs query failed');
-    },
-    queryWindowTabs: async () => [],
-    sendOpenMessage: async () => {},
-    injectSwitcher: async () => {},
+    queryActiveTab: () => Promise.reject(new Error('Tabs query failed')),
+    queryWindowTabs: () => Promise.resolve([]),
+    sendOpenMessage: () => Promise.resolve(),
+    injectSwitcher: () => Promise.resolve(),
   };
 
   await expect(openCurrentWindowSwitcher(port)).rejects.toThrow('Tabs query failed');
@@ -230,12 +233,10 @@ test('openCurrentWindowSwitcher propagates query failures from active tab query'
 
 test('openCurrentWindowSwitcher propagates query failures from window tabs query', async () => {
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: async () => ({ id: 1, windowId: 1, url: 'https://example.com' }),
-    queryWindowTabs: async () => {
-      throw new Error('Window tabs query failed');
-    },
-    sendOpenMessage: async () => {},
-    injectSwitcher: async () => {},
+    queryActiveTab: () => Promise.resolve({ id: 1, windowId: 1, url: 'https://example.com' }),
+    queryWindowTabs: () => Promise.reject(new Error('Window tabs query failed')),
+    sendOpenMessage: () => Promise.resolve(),
+    injectSwitcher: () => Promise.resolve(),
   };
 
   await expect(openCurrentWindowSwitcher(port)).rejects.toThrow('Window tabs query failed');
@@ -258,12 +259,13 @@ test('openCurrentWindowSwitcher excludes current tab and includes all same-windo
 
   const deliveredMessages: OpenSwitcherMessage[] = [];
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: async () => ({ id: 1, windowId: 1, url: 'https://example.com' }),
-    queryWindowTabs: async () => allTabs,
-    sendOpenMessage: async (_tabId, msg) => {
+    queryActiveTab: () => Promise.resolve({ id: 1, windowId: 1, url: 'https://example.com' }),
+    queryWindowTabs: () => Promise.resolve(allTabs),
+    sendOpenMessage: (_tabId, msg) => {
       deliveredMessages.push(msg);
+      return Promise.resolve();
     },
-    injectSwitcher: async () => {},
+    injectSwitcher: () => Promise.resolve(),
   };
 
   const result = await openCurrentWindowSwitcher(port);
@@ -280,12 +282,13 @@ test('openCurrentWindowSwitcher excludes current tab and includes all same-windo
 test('openCurrentWindowSwitcher sends empty OPEN message when no other tabs exist in window', async () => {
   const deliveredMessages: OpenSwitcherMessage[] = [];
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: async () => ({ id: 1, windowId: 1, url: 'https://example.com' }),
-    queryWindowTabs: async () => [{ id: 1, windowId: 1, url: 'https://example.com' }],
-    sendOpenMessage: async (_tabId, msg) => {
+    queryActiveTab: () => Promise.resolve({ id: 1, windowId: 1, url: 'https://example.com' }),
+    queryWindowTabs: () => Promise.resolve([{ id: 1, windowId: 1, url: 'https://example.com' }]),
+    sendOpenMessage: (_tabId, msg) => {
       deliveredMessages.push(msg);
+      return Promise.resolve();
     },
-    injectSwitcher: async () => {},
+    injectSwitcher: () => Promise.resolve(),
   };
 
   const result = await openCurrentWindowSwitcher(port);
@@ -307,10 +310,10 @@ test('openCurrentWindowSwitcher preserves input immutability', async () => {
   ]);
 
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: async () => activeTab,
-    queryWindowTabs: async () => windowTabs,
-    sendOpenMessage: async () => {},
-    injectSwitcher: async () => {},
+    queryActiveTab: () => Promise.resolve(activeTab),
+    queryWindowTabs: () => Promise.resolve(windowTabs),
+    sendOpenMessage: () => Promise.resolve(),
+    injectSwitcher: () => Promise.resolve(),
   };
 
   const result = await openCurrentWindowSwitcher(port);

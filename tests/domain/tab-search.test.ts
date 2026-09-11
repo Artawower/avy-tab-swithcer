@@ -31,7 +31,11 @@ test('searchTabs ranks word prefix over non-word substring', () => {
 });
 
 test('searchTabs ranks substring over subsequence match', () => {
-  const tabSubsequence = createTab({ id: 1, title: 'Default Options and Config', hostname: 'example.com' }); // d-o-c
+  const tabSubsequence = createTab({
+    id: 1,
+    title: 'Default Options and Config',
+    hostname: 'example.com',
+  }); // d-o-c
   const tabSubstring = createTab({ id: 2, title: 'Redoc Reader', hostname: 'example.com' }); // "doc"
 
   const result = searchTabs([tabSubsequence, tabSubstring], 'doc');
@@ -191,10 +195,7 @@ test('searchTabs correctly sorts known recency before null recency when known ta
 });
 
 test('searchTabs handles fractional limits by flooring to integer count', () => {
-  const tabs = [
-    createTab({ id: 1, title: 'Docs 1' }),
-    createTab({ id: 2, title: 'Docs 2' }),
-  ];
+  const tabs = [createTab({ id: 1, title: 'Docs 1' }), createTab({ id: 2, title: 'Docs 2' })];
 
   expect(searchTabs(tabs, 'docs', 0.8)).toEqual([]);
   expect(searchTabs(tabs, 'docs', 1.9)).toHaveLength(1);

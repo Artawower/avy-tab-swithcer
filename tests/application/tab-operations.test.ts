@@ -95,9 +95,15 @@ test('toSwitchableTab rejects missing or invalid windowId', () => {
 test('toSwitchableTab handles finite recency values and falls back to null on non-finite values', () => {
   expect(toSwitchableTab({ id: 1, windowId: 1, lastAccessed: 0 })?.lastAccessed).toBe(0);
   expect(toSwitchableTab({ id: 1, windowId: 1, lastAccessed: 123456 })?.lastAccessed).toBe(123456);
-  expect(toSwitchableTab({ id: 1, windowId: 1, lastAccessed: Number.NaN })?.lastAccessed).toBeNull();
-  expect(toSwitchableTab({ id: 1, windowId: 1, lastAccessed: Number.POSITIVE_INFINITY })?.lastAccessed).toBeNull();
-  expect(toSwitchableTab({ id: 1, windowId: 1, lastAccessed: Number.NEGATIVE_INFINITY })?.lastAccessed).toBeNull();
+  expect(
+    toSwitchableTab({ id: 1, windowId: 1, lastAccessed: Number.NaN })?.lastAccessed,
+  ).toBeNull();
+  expect(
+    toSwitchableTab({ id: 1, windowId: 1, lastAccessed: Number.POSITIVE_INFINITY })?.lastAccessed,
+  ).toBeNull();
+  expect(
+    toSwitchableTab({ id: 1, windowId: 1, lastAccessed: Number.NEGATIVE_INFINITY })?.lastAccessed,
+  ).toBeNull();
 });
 
 test('getCurrentWindowTabs excludes other windows and currentTabId', () => {
@@ -142,9 +148,7 @@ test('getCurrentWindowTabs returns all same-window tabs beyond MAX_QUICK_TABS in
   const result = getCurrentWindowTabs(tabs, 1, 1);
 
   expect(result).toHaveLength(14);
-  expect(result.map((t) => t.id)).toEqual([
-    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2,
-  ]);
+  expect(result.map((t) => t.id)).toEqual([15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2]);
 });
 
 test('getCurrentWindowTabs preserves deterministic tie-breaking and input immutability', () => {
@@ -163,12 +167,13 @@ test('getCurrentWindowTabs preserves deterministic tie-breaking and input immuta
 test('activateTabInWindow succeeds and calls get followed by activate with target tabId', async () => {
   const callLog: string[] = [];
   const port: TabActivationPort = {
-    get: async (tabId: number) => {
+    get: (tabId: number) => {
       callLog.push(`get:${tabId}`);
-      return { id: tabId, windowId: 10 };
+      return Promise.resolve({ id: tabId, windowId: 10 });
     },
-    activate: async (tabId: number) => {
+    activate: (tabId: number) => {
       callLog.push(`activate:${tabId}`);
+      return Promise.resolve();
     },
   };
 
@@ -181,12 +186,13 @@ test('activateTabInWindow succeeds and calls get followed by activate with targe
 test('activateTabInWindow blocks activation when target tab is in a different window', async () => {
   const callLog: string[] = [];
   const port: TabActivationPort = {
-    get: async (tabId: number) => {
+    get: (tabId: number) => {
       callLog.push(`get:${tabId}`);
-      return { id: tabId, windowId: 99 };
+      return Promise.resolve({ id: tabId, windowId: 99 });
     },
-    activate: async (tabId: number) => {
+    activate: (tabId: number) => {
       callLog.push(`activate:${tabId}`);
+      return Promise.resolve();
     },
   };
 
@@ -199,12 +205,13 @@ test('activateTabInWindow blocks activation when target tab is in a different wi
 test('activateTabInWindow blocks activation when fetched tab id does not match requested tabId', async () => {
   const callLog: string[] = [];
   const port: TabActivationPort = {
-    get: async (tabId: number) => {
+    get: (tabId: number) => {
       callLog.push(`get:${tabId}`);
-      return { id: 999, windowId: 10 };
+      return Promise.resolve({ id: 999, windowId: 10 });
     },
-    activate: async (tabId: number) => {
+    activate: (tabId: number) => {
       callLog.push(`activate:${tabId}`);
+      return Promise.resolve();
     },
   };
 
@@ -216,8 +223,8 @@ test('activateTabInWindow blocks activation when fetched tab id does not match r
 
 test('activateTabInWindow blocks activation when fetched tab metadata is invalid', async () => {
   const port: TabActivationPort = {
-    get: async () => ({ id: -1, windowId: 10 }),
-    activate: async () => {},
+    get: () => Promise.resolve({ id: -1, windowId: 10 }),
+    activate: () => Promise.resolve(),
   };
 
   const result = await activateTabInWindow(port, 42, 10);
@@ -228,12 +235,13 @@ test('activateTabInWindow blocks activation when fetched tab metadata is invalid
 test('activateTabInWindow handles port.get rejection cleanly as tab-unavailable', async () => {
   const callLog: string[] = [];
   const port: TabActivationPort = {
-    get: async (tabId: number) => {
+    get: (tabId: number) => {
       callLog.push(`get:${tabId}`);
-      throw new Error('Tab not found');
+      return Promise.reject(new Error('Tab not found'));
     },
-    activate: async (tabId: number) => {
+    activate: (tabId: number) => {
       callLog.push(`activate:${tabId}`);
+      return Promise.resolve();
     },
   };
 
@@ -246,13 +254,13 @@ test('activateTabInWindow handles port.get rejection cleanly as tab-unavailable'
 test('activateTabInWindow handles port.activate rejection cleanly as tab-unavailable', async () => {
   const callLog: string[] = [];
   const port: TabActivationPort = {
-    get: async (tabId: number) => {
+    get: (tabId: number) => {
       callLog.push(`get:${tabId}`);
-      return { id: tabId, windowId: 10 };
+      return Promise.resolve({ id: tabId, windowId: 10 });
     },
-    activate: async (tabId: number) => {
+    activate: (tabId: number) => {
       callLog.push(`activate:${tabId}`);
-      throw new Error('Tab closed before activation');
+      return Promise.reject(new Error('Tab closed before activation'));
     },
   };
 

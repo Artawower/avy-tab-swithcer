@@ -180,8 +180,12 @@ test('isOpenSwitcherMessage rejects when any tab in tabs array is invalid', () =
   const invalidTab = { ...createTab({ id: 2 }), id: -1 };
 
   expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: [invalidTab] })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: [validTab, invalidTab] })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: [invalidTab, validTab] })).toBe(false);
+  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: [validTab, invalidTab] })).toBe(
+    false,
+  );
+  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: [invalidTab, validTab] })).toBe(
+    false,
+  );
   expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: [validTab, null] })).toBe(false);
   expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: ['not a tab'] })).toBe(false);
 });
@@ -247,8 +251,12 @@ test('isActivateTabMessage rejects malformed tabId values', () => {
   expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: -1 })).toBe(false);
   expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: 1.5 })).toBe(false);
   expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: Number.NaN })).toBe(false);
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: Number.POSITIVE_INFINITY })).toBe(false);
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: Number.NEGATIVE_INFINITY })).toBe(false);
+  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: Number.POSITIVE_INFINITY })).toBe(
+    false,
+  );
+  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: Number.NEGATIVE_INFINITY })).toBe(
+    false,
+  );
   expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: '42' })).toBe(false);
   expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: null })).toBe(false);
   expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: undefined })).toBe(false);

@@ -1,8 +1,5 @@
 import { beforeEach, expect, test } from 'vitest';
-import {
-  createSwitcherHost,
-  SWITCHER_HOST_ID,
-} from '../../src/ui/switcher-host';
+import { createSwitcherHost, SWITCHER_HOST_ID } from '../../src/ui/switcher-host';
 
 beforeEach(() => {
   const existing = document.getElementById(SWITCHER_HOST_ID);

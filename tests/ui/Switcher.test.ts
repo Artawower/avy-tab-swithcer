@@ -2,15 +2,11 @@ import { enableAutoUnmount, mount } from '@vue/test-utils';
 import { afterEach, expect, test } from 'vitest';
 import { nextTick } from 'vue';
 import Switcher from '../../src/ui/Switcher.vue';
-import TabTile from '../../src/ui/TabTile.vue';
 import { createTab } from '../fixtures/tab';
 
 enableAutoUnmount(afterEach);
 
-function dispatchKey(
-  key: string,
-  options?: Partial<KeyboardEventInit>,
-): KeyboardEvent {
+function dispatchKey(key: string, options?: Partial<KeyboardEventInit>): KeyboardEvent {
   const event = new KeyboardEvent('keydown', {
     key,
     bubbles: true,
@@ -64,11 +60,11 @@ test('Switcher caps quick mode to 10 tabs in MRU order with first selected', () 
     },
   });
 
-  const tiles = wrapper.findAllComponents(TabTile);
+  const tiles = wrapper.findAll('.tab-tile');
   expect(tiles).toHaveLength(10);
-  expect(tiles[0]?.props('tab').id).toBe(15);
-  expect(tiles[0]?.props('selected')).toBe(true);
-  expect(tiles[1]?.props('selected')).toBe(false);
+  expect(tiles[0]?.text()).toContain('Tab 15');
+  expect(tiles[0]?.classes()).toContain('tab-tile--selected');
+  expect(tiles[1]?.classes()).not.toContain('tab-tile--selected');
 });
 
 test('Switcher assigns unique visible hints in quick mode', () => {
@@ -85,8 +81,16 @@ test('Switcher assigns unique visible hints in quick mode', () => {
     },
   });
 
-  const tiles = wrapper.findAllComponents(TabTile);
-  const hints = tiles.map((t) => t.props('hint')).filter((h): h is string => h !== null);
+  const tiles = wrapper.findAll('.tab-tile');
+  const hints = tiles
+    .map((t) => {
+      const mark = t.find('mark.tab-tile__hint-char');
+      if (mark.exists()) return mark.text().toLowerCase();
+      const badge = t.find('.tab-tile__hint-badge');
+      if (badge.exists()) return badge.text().toLowerCase();
+      return null;
+    })
+    .filter((h): h is string => h !== null);
 
   expect(hints).toHaveLength(3);
   expect(new Set(hints).size).toBe(3);
@@ -125,18 +129,19 @@ test('Switcher finds a tab outside quick 10 in search mode and uses same tile gr
     },
   });
 
-  let tiles = wrapper.findAllComponents(TabTile);
-  expect(tiles.map((t) => t.props('tab').id)).not.toContain(11);
+  let tiles = wrapper.findAll('.tab-tile');
+  expect(tiles.map((t) => t.text())).not.toContain('Needle');
 
   await wrapper.find('.switcher-search-surface').trigger('click');
   const searchInput = wrapper.find('input.switcher-search-input');
   await searchInput.setValue('needle');
 
-  tiles = wrapper.findAllComponents(TabTile);
+  tiles = wrapper.findAll('.tab-tile');
   expect(tiles).toHaveLength(1);
-  expect(tiles[0]?.props('tab').id).toBe(11);
-  expect(tiles[0]?.props('selected')).toBe(true);
-  expect(tiles[0]?.props('hint')).toBeNull();
+  expect(tiles[0]?.text()).toContain('Needle');
+  expect(tiles[0]?.classes()).toContain('tab-tile--selected');
+  expect(tiles[0]?.find('.tab-tile__hint-badge').exists()).toBe(false);
+  expect(tiles[0]?.find('mark.tab-tile__hint-char').exists()).toBe(false);
 });
 
 test('Switcher shows query no-result empty state during search', async () => {
@@ -152,7 +157,7 @@ test('Switcher shows query no-result empty state during search', async () => {
   const searchInput = wrapper.find('input.switcher-search-input');
   await searchInput.setValue('nonexistentquery123');
 
-  expect(wrapper.findAllComponents(TabTile)).toHaveLength(0);
+  expect(wrapper.findAll('.tab-tile')).toHaveLength(0);
   const empty = wrapper.find('.switcher-empty');
   expect(empty.exists()).toBe(true);
   expect(empty.text()).toBe('No matching tabs');
@@ -167,7 +172,7 @@ test('Switcher shows quick mode empty state when tabs array is empty', () => {
     },
   });
 
-  expect(wrapper.findAllComponents(TabTile)).toHaveLength(0);
+  expect(wrapper.findAll('.tab-tile')).toHaveLength(0);
   const empty = wrapper.find('.switcher-empty');
   expect(empty.exists()).toBe(true);
   expect(empty.text()).toBe('No other tabs');
@@ -183,8 +188,8 @@ test('Switcher emits activate event when a tile is clicked', async () => {
     },
   });
 
-  const tile = wrapper.findComponent(TabTile);
-  await tile.find('button').trigger('click');
+  const tile = wrapper.find('button.tab-tile');
+  await tile.trigger('click');
 
   expect(wrapper.emitted('activate')).toBeTruthy();
   expect(wrapper.emitted('activate')?.[0]).toEqual([88]);
@@ -207,10 +212,7 @@ test('Switcher emits close event when close button is clicked', async () => {
 });
 
 test('Switcher resets to quick mode, empty query, and initial selection on reopen', async () => {
-  const tabs = [
-    createTab({ id: 1, title: 'Tab 1' }),
-    createTab({ id: 2, title: 'Tab 2' }),
-  ];
+  const tabs = [createTab({ id: 1, title: 'Tab 1' }), createTab({ id: 2, title: 'Tab 2' })];
   const wrapper = mount(Switcher, {
     props: {
       open: true,
@@ -220,7 +222,7 @@ test('Switcher resets to quick mode, empty query, and initial selection on reope
 
   await wrapper.find('.switcher-search-surface').trigger('click');
   await wrapper.find('input.switcher-search-input').setValue('Tab 2');
-  expect(wrapper.findAllComponents(TabTile)).toHaveLength(1);
+  expect(wrapper.findAll('.tab-tile')).toHaveLength(1);
 
   await wrapper.setProps({ open: false });
   await wrapper.setProps({ open: true });
@@ -228,8 +230,8 @@ test('Switcher resets to quick mode, empty query, and initial selection on reope
   const input = wrapper.find<HTMLInputElement>('input.switcher-search-input');
   expect(input.element.value).toBe('');
   expect(input.attributes('readonly')).toBeDefined();
-  expect(wrapper.findAllComponents(TabTile)).toHaveLength(2);
-  expect(wrapper.findAllComponents(TabTile)[0]?.props('selected')).toBe(true);
+  expect(wrapper.findAll('.tab-tile')).toHaveLength(2);
+  expect(wrapper.findAll('.tab-tile')[0]?.classes()).toContain('tab-tile--selected');
 });
 
 test('Switcher resets state when tabs prop changes while open', async () => {
@@ -265,10 +267,10 @@ test('quick initially selects previous MRU and search is not focused', () => {
     attachTo: document.body,
   });
 
-  const tiles = wrapper.findAllComponents(TabTile);
-  expect(tiles[0]?.props('selected')).toBe(true);
-  expect(tiles[0]?.props('tab').id).toBe(10);
-  expect(tiles[1]?.props('selected')).toBe(false);
+  const tiles = wrapper.findAll('.tab-tile');
+  expect(tiles[0]?.classes()).toContain('tab-tile--selected');
+  expect(tiles[0]?.text()).toContain('Previous MRU Tab');
+  expect(tiles[1]?.classes()).not.toContain('tab-tile--selected');
 
   const searchInput = wrapper.find<HTMLInputElement>('input.switcher-search-input');
   expect(searchInput.attributes('readonly')).toBeDefined();
@@ -343,7 +345,7 @@ test('search Escape clears/leaves search/restores quick tiles without closing; s
 
   const searchInput = wrapper.find<HTMLInputElement>('input.switcher-search-input');
   await searchInput.setValue('Second');
-  expect(wrapper.findAllComponents(TabTile)).toHaveLength(1);
+  expect(wrapper.findAll('.tab-tile')).toHaveLength(1);
 
   // First Escape in search mode
   const esc1 = dispatchKey('Escape');
@@ -357,10 +359,10 @@ test('search Escape clears/leaves search/restores quick tiles without closing; s
   expect(document.activeElement).not.toBe(searchInput.element);
 
   // Quick tiles restored, first selected
-  const restoredTiles = wrapper.findAllComponents(TabTile);
+  const restoredTiles = wrapper.findAll('.tab-tile');
   expect(restoredTiles).toHaveLength(2);
-  expect(restoredTiles[0]?.props('selected')).toBe(true);
-  expect(restoredTiles[0]?.props('tab').id).toBe(1);
+  expect(restoredTiles[0]?.classes()).toContain('tab-tile--selected');
+  expect(restoredTiles[0]?.text()).toContain('First Tab');
 
   // Second Escape in quick mode
   const esc2 = dispatchKey('Escape');
@@ -381,8 +383,8 @@ test('all four arrows change selected tile at desktop grid (5 columns)', async (
 
   const getSelectedIndex = async (): Promise<number> => {
     await nextTick();
-    const tiles = wrapper.findAllComponents(TabTile);
-    return tiles.findIndex((t) => t.props('selected'));
+    const tiles = wrapper.findAll('.tab-tile');
+    return tiles.findIndex((t) => t.classes().includes('tab-tile--selected'));
   };
 
   expect(await getSelectedIndex()).toBe(0);
@@ -446,8 +448,8 @@ test('arrows change selected tile at responsive grid (width <= 480 => 2 columns)
 
   const getSelectedIndex = async (): Promise<number> => {
     await nextTick();
-    const tiles = wrapper.findAllComponents(TabTile);
-    return tiles.findIndex((t) => t.props('selected'));
+    const tiles = wrapper.findAll('.tab-tile');
+    return tiles.findIndex((t) => t.classes().includes('tab-tile--selected'));
   };
 
   expect(await getSelectedIndex()).toBe(0);
@@ -478,9 +480,18 @@ test('uppercase and lowercase mnemonic activates immediately; mnemonic miss does
     props: { open: true, tabs },
   });
 
-  const tiles = wrapper.findAllComponents(TabTile);
-  const hint0 = tiles[0]?.props('hint');
-  const hint1 = tiles[1]?.props('hint');
+  const tiles = wrapper.findAll('.tab-tile');
+  const getHint = (el: (typeof tiles)[number]): string | null => {
+    const mark = el.find('mark.tab-tile__hint-char');
+    if (mark.exists()) return mark.text();
+    const badge = el.find('.tab-tile__hint-badge');
+    if (badge.exists()) return badge.text();
+    return null;
+  };
+  const firstTile = tiles[0];
+  const secondTile = tiles[1];
+  const hint0 = firstTile ? getHint(firstTile) : null;
+  const hint1 = secondTile ? getHint(secondTile) : null;
 
   expect(hint0).not.toBeNull();
   expect(hint1).not.toBeNull();
@@ -523,16 +534,16 @@ test('search typing filters, selection resets, arrows select another result, Ent
   const searchInput = wrapper.find<HTMLInputElement>('input.switcher-search-input');
   await searchInput.setValue('Alpha');
 
-  const filteredTiles = wrapper.findAllComponents(TabTile);
+  const filteredTiles = wrapper.findAll('.tab-tile');
   expect(filteredTiles).toHaveLength(2);
-  expect(filteredTiles[0]?.props('selected')).toBe(true);
-  expect(filteredTiles[0]?.props('tab').id).toBe(1);
+  expect(filteredTiles[0]?.classes()).toContain('tab-tile--selected');
+  expect(filteredTiles[0]?.text()).toContain('Alpha First');
 
   // Arrow right selects second result in the same row
   dispatchKey('ArrowRight');
   await nextTick();
-  const updatedTiles = wrapper.findAllComponents(TabTile);
-  expect(updatedTiles[1]?.props('selected')).toBe(true);
+  const updatedTiles = wrapper.findAll('.tab-tile');
+  expect(updatedTiles[1]?.classes()).toContain('tab-tile--selected');
 
   // Enter activates second result
   dispatchKey('Enter');
@@ -552,7 +563,7 @@ test('empty search results arrows and Enter are safe', async () => {
   const searchInput = wrapper.find<HTMLInputElement>('input.switcher-search-input');
   await searchInput.setValue('nomatchxyz');
 
-  expect(wrapper.findAllComponents(TabTile)).toHaveLength(0);
+  expect(wrapper.findAll('.tab-tile')).toHaveLength(0);
 
   // Arrows should not crash or change selection
   const evDown = dispatchKey('ArrowDown');
@@ -592,7 +603,7 @@ test('modified and composing keys are ignored', () => {
 
 test('unrecognized key in quick mode and typing in search mode do not prevent default', async () => {
   const tabs = [createTab({ id: 1, title: 'Tab 1' })];
-  const wrapper = mount(Switcher, {
+  mount(Switcher, {
     props: { open: true, tabs },
   });
 

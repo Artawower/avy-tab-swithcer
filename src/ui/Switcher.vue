@@ -1,12 +1,5 @@
 <script setup lang="ts">
-import {
-  computed,
-  nextTick,
-  onMounted,
-  onUnmounted,
-  ref,
-  watch,
-} from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   getGridColumnCount,
   moveSelection,
@@ -81,7 +74,7 @@ watch(
 function enterSearch(): void {
   if (mode.value === 'quick') {
     mode.value = 'search';
-    nextTick(() => {
+    void nextTick(() => {
       searchInputRef.value?.focus();
     });
   }
@@ -106,10 +99,7 @@ watch(query, () => {
 });
 
 function activateSelected(): void {
-  if (
-    selectedIndex.value >= 0 &&
-    selectedIndex.value < displayedItems.value.length
-  ) {
+  if (selectedIndex.value >= 0 && selectedIndex.value < displayedItems.value.length) {
     const item = displayedItems.value[selectedIndex.value];
     if (item) {
       emit('activate', item.tab.id);
@@ -139,13 +129,7 @@ function consumeEvent(event: KeyboardEvent): void {
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  if (
-    !props.open ||
-    event.isComposing ||
-    event.ctrlKey ||
-    event.metaKey ||
-    event.altKey
-  ) {
+  if (!props.open || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
     return;
   }
 
@@ -271,7 +255,7 @@ function onTileActivate(tabId: number): void {
           :tab="item.tab"
           :selected="index === selectedIndex"
           :hint="item.hint"
-          :hintIndex="item.hintIndex"
+          :hint-index="item.hintIndex"
           @activate="onTileActivate"
         />
       </div>

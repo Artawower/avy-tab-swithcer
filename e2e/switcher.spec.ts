@@ -14,7 +14,6 @@ test('Extension loads: MV3 service worker exists and manifest is Avy Tab Switche
 
 test('Quick flow: displays MRU order, omits current tab, and clicking tile switches active browser tab', async ({
   context,
-  serviceWorker,
   openSwitcher,
   getActiveTabTitle,
 }) => {
@@ -77,7 +76,6 @@ test('Quick flow: displays MRU order, omits current tab, and clicking tile switc
 
 test('Search and close flow: searches beyond top 10 MRU, Enter activates, and close button hides overlay', async ({
   context,
-  serviceWorker,
   openSwitcher,
   getActiveTabTitle,
 }) => {
@@ -125,7 +123,9 @@ test('Search and close flow: searches beyond top 10 MRU, Enter activates, and cl
   await expect(activePage.locator('.switcher-grid-surface')).toBeVisible();
   const searchResults = activePage.locator('.tab-tile');
   await expect(searchResults).toHaveCount(1);
-  await expect(searchResults.first().locator('.tab-tile__title')).toContainText('Unique Needle Candidate');
+  await expect(searchResults.first().locator('.tab-tile__title')).toContainText(
+    'Unique Needle Candidate',
+  );
   await expect(searchResults.first()).toHaveClass(/tab-tile--selected/);
 
   // Press Enter and assert real active tab changes

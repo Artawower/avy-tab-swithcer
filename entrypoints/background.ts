@@ -3,10 +3,7 @@ import {
   openCurrentWindowSwitcher,
   type SwitcherBackgroundPort,
 } from '../src/application/background';
-import {
-  isActivateTabMessage,
-  type ActivateTabResult,
-} from '../src/application/messages';
+import { isActivateTabMessage, type ActivateTabResult } from '../src/application/messages';
 import {
   activateTabInWindow,
   type BrowserTabData,
@@ -73,19 +70,20 @@ export default defineBackground(() => {
     }
   });
 
-  browser.runtime.onMessage.addListener((message: unknown, sender) => {
-    if (!isActivateTabMessage(message)) {
-      return;
-    }
+  browser.runtime.onMessage.addListener(
+    (message: unknown, sender, sendResponse: (response: ActivateTabResult) => void) => {
+      if (!isActivateTabMessage(message)) {
+        return;
+      }
 
-    return (async (): Promise<ActivateTabResult> => {
       const senderWindowId = sender.tab?.windowId;
       if (
         typeof senderWindowId !== 'number' ||
         !Number.isInteger(senderWindowId) ||
         senderWindowId < 0
       ) {
-        return { ok: false, reason: 'unexpected' };
+        sendResponse({ ok: false, reason: 'unexpected' });
+        return;
       }
 
       const activationPort: TabActivationPort = {
@@ -98,7 +96,16 @@ export default defineBackground(() => {
         },
       };
 
-      return activateTabInWindow(activationPort, message.tabId, senderWindowId);
-    })();
-  });
+      activateTabInWindow(activationPort, message.tabId, senderWindowId)
+        .then((result: ActivateTabResult) => {
+          sendResponse(result);
+        })
+        .catch((err: unknown) => {
+          console.error('[Avy] Unexpected error activating tab:', err);
+          sendResponse({ ok: false, reason: 'unexpected' });
+        });
+
+      return true;
+    },
+  );
 });

@@ -39,9 +39,7 @@ export function moveSelection(
   }
 
   const safeColumns =
-    typeof columns === 'number' && Number.isInteger(columns) && columns > 0
-      ? columns
-      : 1;
+    typeof columns === 'number' && Number.isInteger(columns) && columns > 0 ? columns : 1;
 
   const col = currentIndex % safeColumns;
 

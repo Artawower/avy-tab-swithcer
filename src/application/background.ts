@@ -1,9 +1,5 @@
 import type { OpenSwitcherMessage } from './messages';
-import {
-  getCurrentWindowTabs,
-  toSwitchableTab,
-  type BrowserTabData,
-} from './tab-operations';
+import { getCurrentWindowTabs, toSwitchableTab, type BrowserTabData } from './tab-operations';
 
 export interface SwitcherBackgroundPort {
   readonly queryActiveTab: () => Promise<BrowserTabData | null>;
@@ -24,9 +20,7 @@ export function isInjectablePageUrl(url: string): boolean {
   }
 }
 
-export async function openCurrentWindowSwitcher(
-  port: SwitcherBackgroundPort,
-): Promise<boolean> {
+export async function openCurrentWindowSwitcher(port: SwitcherBackgroundPort): Promise<boolean> {
   const activeTab = await port.queryActiveTab();
   if (!activeTab) {
     return false;
@@ -38,11 +32,7 @@ export async function openCurrentWindowSwitcher(
   }
 
   const windowTabs = await port.queryWindowTabs(switchableActive.windowId);
-  const tabs = getCurrentWindowTabs(
-    windowTabs,
-    switchableActive.id,
-    switchableActive.windowId,
-  );
+  const tabs = getCurrentWindowTabs(windowTabs, switchableActive.id, switchableActive.windowId);
 
   const message: OpenSwitcherMessage = {
     type: 'OPEN_SWITCHER',

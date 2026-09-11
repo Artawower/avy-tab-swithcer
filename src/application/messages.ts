@@ -47,7 +47,10 @@ export function isSwitchableTab(value: unknown): value is SwitchableTab {
     return false;
   }
 
-  if (lastAccessed !== null && (typeof lastAccessed !== 'number' || !Number.isFinite(lastAccessed))) {
+  if (
+    lastAccessed !== null &&
+    (typeof lastAccessed !== 'number' || !Number.isFinite(lastAccessed))
+  ) {
     return false;
   }
 

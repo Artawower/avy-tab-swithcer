@@ -9,10 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { OpenSwitcherMessage } from '../src/application/messages';
-import {
-  getCurrentWindowTabs,
-  type BrowserTabData,
-} from '../src/application/tab-operations';
+import { getCurrentWindowTabs, type BrowserTabData } from '../src/application/tab-operations';
 
 declare global {
   interface ChromeTab {
@@ -82,9 +79,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isStringArray(value: unknown): value is readonly string[] {
-  return (
-    Array.isArray(value) && value.every((item) => typeof item === 'string')
-  );
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
 export const test = base.extend<ExtensionTestFixtures>({
@@ -113,17 +108,13 @@ export const test = base.extend<ExtensionTestFixtures>({
       let existingHostPermissions: readonly string[] = [];
       if ('host_permissions' in parsed && parsed.host_permissions !== undefined) {
         if (!isStringArray(parsed.host_permissions)) {
-          throw new Error(
-            'Invalid manifest.json: host_permissions must be an array of strings',
-          );
+          throw new Error('Invalid manifest.json: host_permissions must be an array of strings');
         }
         existingHostPermissions = parsed.host_permissions;
       }
 
       const targetPermission = 'http://localhost/*';
-      const updatedHostPermissions = existingHostPermissions.includes(
-        targetPermission,
-      )
+      const updatedHostPermissions = existingHostPermissions.includes(targetPermission)
         ? existingHostPermissions
         : [...existingHostPermissions, targetPermission];
 
@@ -174,10 +165,7 @@ export const test = base.extend<ExtensionTestFixtures>({
           currentWindow: true,
         });
         const windowId = active?.windowId;
-        const windowTabs =
-          windowId !== undefined
-            ? await chrome.tabs.query({ windowId })
-            : [];
+        const windowTabs = windowId !== undefined ? await chrome.tabs.query({ windowId }) : [];
         return {
           activeTab: active,
           windowTabs,
@@ -185,11 +173,7 @@ export const test = base.extend<ExtensionTestFixtures>({
       });
 
       const active = snapshot.activeTab;
-      if (
-        !active ||
-        typeof active.id !== 'number' ||
-        typeof active.windowId !== 'number'
-      ) {
+      if (!active || typeof active.id !== 'number' || typeof active.windowId !== 'number') {
         throw new Error('No active tab found in current window');
       }
 
@@ -215,9 +199,7 @@ export const test = base.extend<ExtensionTestFixtures>({
         { tabId: active.id, message },
       );
 
-      await targetPage
-        .locator('.switcher-overlay')
-        .waitFor({ state: 'visible', timeout: 5000 });
+      await targetPage.locator('.switcher-overlay').waitFor({ state: 'visible', timeout: 5000 });
     };
 
     await use(fn);

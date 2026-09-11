@@ -37,9 +37,7 @@ export function toSwitchableTab(tab: BrowserTabData): SwitchableTab | null {
   }
 
   const faviconUrl =
-    typeof tab.favIconUrl === 'string' && tab.favIconUrl.length > 0
-      ? tab.favIconUrl
-      : null;
+    typeof tab.favIconUrl === 'string' && tab.favIconUrl.length > 0 ? tab.favIconUrl : null;
 
   const lastAccessed =
     typeof tab.lastAccessed === 'number' && Number.isFinite(tab.lastAccessed)

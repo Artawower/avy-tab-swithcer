@@ -10,6 +10,7 @@ coverage/
 test-results/
 playwright-report/
 blob-report/
+.vitest/
 
 # Local browser profiles & cache
 .cache/

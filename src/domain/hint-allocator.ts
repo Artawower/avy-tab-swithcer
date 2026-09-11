@@ -58,7 +58,10 @@ function getTabCandidates(tab: SwitchableTab): readonly string[] {
   }
 
   const host = tab.hostname.trim().toLowerCase();
-  const rawLabels = host.split('.').map((s) => s.trim()).filter((s) => s.length > 0);
+  const rawLabels = host
+    .split('.')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
   let meaningfulLabels = rawLabels;
   // Exclude leading 'www' and trailing TLD so domain/subdomain names take mnemonic precedence.
   if (meaningfulLabels.length > 0 && meaningfulLabels[0] === 'www') {
@@ -91,9 +94,7 @@ function getTabCandidates(tab: SwitchableTab): readonly string[] {
   return candidates;
 }
 
-export function allocateTabHints(
-  tabs: readonly SwitchableTab[],
-): readonly HintedTab[] {
+export function allocateTabHints(tabs: readonly SwitchableTab[]): readonly HintedTab[] {
   const visibleTabs = tabs.slice(0, MAX_QUICK_TABS);
   const usedHints = new Set<string>();
   const result: HintedTab[] = [];

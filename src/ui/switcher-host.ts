@@ -1,9 +1,6 @@
 export const SWITCHER_HOST_ID = 'avy-tab-switcher-root';
 
-export function createSwitcherHost(
-  document: Document,
-  cssText: string,
-): HTMLElement | null {
+export function createSwitcherHost(document: Document, cssText: string): HTMLElement | null {
   if (document.getElementById(SWITCHER_HOST_ID)) {
     return null;
   }
