@@ -1,5 +1,5 @@
 import { MAX_QUICK_TABS, type SwitchableTab } from './tab';
-import { getRecentTabs } from './tab-order';
+import { compareTabRecency, getRecentTabs, normalizeTabLimit } from './tab-order';
 
 const enum MatchQuality {
   Exact = 0,
@@ -18,10 +18,6 @@ const enum FieldPriority {
 interface BestMatch {
   readonly quality: MatchQuality;
   readonly fieldPriority: FieldPriority;
-}
-
-function isValidRecency(val: number | null): val is number {
-  return typeof val === 'number' && Number.isFinite(val);
 }
 
 function isSubsequence(query: string, target: string): boolean {
@@ -91,12 +87,8 @@ export function searchTabs(
   query: string,
   limit: number = MAX_QUICK_TABS,
 ): readonly SwitchableTab[] {
-  if (!Number.isFinite(limit) || limit <= 0) {
-    return [];
-  }
-
-  const integerLimit = Math.floor(limit);
-  if (integerLimit <= 0) {
+  const integerLimit = normalizeTabLimit(limit);
+  if (integerLimit === 0) {
     return [];
   }
 
@@ -130,23 +122,9 @@ export function searchTabs(
       return first.match.fieldPriority - second.match.fieldPriority;
     }
 
-    const a = first.tab;
-    const b = second.tab;
-    const recencyA = a.lastAccessed;
-    const recencyB = b.lastAccessed;
-
-    if (isValidRecency(recencyA) && isValidRecency(recencyB)) {
-      if (recencyB !== recencyA) {
-        return recencyB - recencyA;
-      }
-    } else if (isValidRecency(recencyA)) {
-      return -1;
-    } else if (isValidRecency(recencyB)) {
-      return 1;
-    }
-
-    if (a.id !== b.id) {
-      return a.id - b.id;
+    const recencyDiff = compareTabRecency(first.tab, second.tab);
+    if (recencyDiff !== 0) {
+      return recencyDiff;
     }
 
     return first.originalIndex - second.originalIndex;

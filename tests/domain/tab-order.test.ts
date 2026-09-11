@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { MAX_QUICK_TABS } from '../../src/domain/tab';
-import { getRecentTabs } from '../../src/domain/tab-order';
+import { compareTabRecency, getRecentTabs, normalizeTabLimit } from '../../src/domain/tab-order';
 import { createTab } from '../fixtures/tab';
 
 test('getRecentTabs orders tabs by descending lastAccessed recency', () => {
@@ -185,4 +185,33 @@ test('getRecentTabs safely floors non-integer positive limits to integer count',
 
   const zeroResult = getRecentTabs(tabs, null, 0.9);
   expect(zeroResult).toEqual([]);
+});
+
+test('normalizeTabLimit maps non-finite, non-positive, and floored-to-zero values to 0, and positive values to floored integer', () => {
+  expect(normalizeTabLimit(0)).toBe(0);
+  expect(normalizeTabLimit(-1)).toBe(0);
+  expect(normalizeTabLimit(NaN)).toBe(0);
+  expect(normalizeTabLimit(Infinity)).toBe(0);
+  expect(normalizeTabLimit(-Infinity)).toBe(0);
+  expect(normalizeTabLimit(0.8)).toBe(0);
+  expect(normalizeTabLimit(1.9)).toBe(1);
+  expect(normalizeTabLimit(10)).toBe(10);
+});
+
+test('compareTabRecency orders by recency descending, known before null, id ascending, and returns 0 for equality', () => {
+  const newer = createTab({ id: 2, lastAccessed: 2000 });
+  const older = createTab({ id: 1, lastAccessed: 1000 });
+  const nullRecencyLowId = createTab({ id: 3, lastAccessed: null });
+  const nullRecencyHighId = createTab({ id: 4, lastAccessed: null });
+  const equalRecencyLowId = createTab({ id: 5, lastAccessed: 1000 });
+  const duplicateTab = createTab({ id: 1, lastAccessed: 1000 });
+
+  expect(compareTabRecency(newer, older)).toBeLessThan(0);
+  expect(compareTabRecency(older, newer)).toBeGreaterThan(0);
+  expect(compareTabRecency(older, nullRecencyLowId)).toBeLessThan(0);
+  expect(compareTabRecency(nullRecencyLowId, older)).toBeGreaterThan(0);
+  expect(compareTabRecency(nullRecencyLowId, nullRecencyHighId)).toBeLessThan(0);
+  expect(compareTabRecency(nullRecencyHighId, nullRecencyLowId)).toBeGreaterThan(0);
+  expect(compareTabRecency(older, equalRecencyLowId)).toBeLessThan(0);
+  expect(compareTabRecency(older, duplicateTab)).toBe(0);
 });
