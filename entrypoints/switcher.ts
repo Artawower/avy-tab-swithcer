@@ -1,62 +1,42 @@
-import { createApp, defineComponent, h, ref } from 'vue';
 import { browser } from 'wxt/browser';
-import { isActivateTabResult, isOpenSwitcherMessage } from '../src/application/messages';
-import type { SwitchableTab } from '../src/domain/tab';
-import Switcher from '../src/ui/Switcher.vue';
+import {
+  isFrameCloseMessage,
+  isFrameInitErrorMessage,
+  isOpenSwitcherHostMessage,
+} from '../src/application/messages';
 import { createSwitcherHost } from '../src/ui/switcher-host';
-import switcherCss from '../src/ui/switcher.css?inline';
 
 export default defineUnlistedScript(() => {
-  const container = createSwitcherHost(document, switcherCss);
-  if (!container) {
-    return;
-  }
+  const controller = createSwitcherHost(document);
+  let currentSessionId = '';
 
-  const open = ref(false);
-  const tabs = ref<readonly SwitchableTab[]>([]);
+  const extensionOrigin = new URL(browser.runtime.getURL('')).origin;
 
   browser.runtime.onMessage.addListener((message: unknown) => {
-    if (isOpenSwitcherMessage(message)) {
-      tabs.value = message.tabs;
-      open.value = true;
+    if (isOpenSwitcherHostMessage(message)) {
+      currentSessionId = message.sessionId;
+      controller.open(message.frameUrl);
     }
   });
 
-  const App = defineComponent({
-    setup() {
-      return () =>
-        h(Switcher, {
-          open: open.value,
-          tabs: tabs.value,
-          onClose: () => {
-            open.value = false;
-          },
-          onActivate: (tabId: number) => {
-            open.value = false;
-            const recover = (): void => {
-              tabs.value = tabs.value.filter((tab) => tab.id !== tabId);
-              open.value = true;
-            };
+  window.addEventListener('message', (event: MessageEvent<unknown>) => {
+    if (event.origin !== extensionOrigin) {
+      return;
+    }
 
-            browser.runtime
-              .sendMessage({
-                type: 'ACTIVATE_TAB',
-                tabId,
-              })
-              .then((response: unknown) => {
-                if (!isActivateTabResult(response) || !response.ok) {
-                  recover();
-                }
-              })
-              .catch((err: unknown) => {
-                console.error('[Avy] Unexpected error activating tab:', err);
-                recover();
-              });
-          },
-        });
-    },
+    if (event.source !== controller.iframe.contentWindow) {
+      return;
+    }
+
+    if (isFrameCloseMessage(event.data)) {
+      if (event.data.sessionId === currentSessionId) {
+        controller.close();
+      }
+      return;
+    }
+
+    if (isFrameInitErrorMessage(event.data)) {
+      controller.close();
+    }
   });
-
-  const app = createApp(App);
-  app.mount(container);
 });

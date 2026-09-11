@@ -10,18 +10,18 @@
 
 - **Background Layer (`entrypoints/background.ts`)**:
   - Handles privileged extension operations (`browser.commands`, `browser.tabs.query`, `browser.tabs.get`, `browser.tabs.update`).
-  - Dispatches `OPEN_SWITCHER` and executes `/switcher.js` via `browser.scripting.executeScript`.
-  - Responds to `ACTIVATE_TAB` messages using the asynchronous `sendResponse` pattern.
-- **Presentation Layer (`entrypoints/switcher.ts`, `src/ui/`)**:
-  - Manages the open Shadow DOM host mounted on the active webpage.
-  - Hosts `Switcher.vue` and `TabTile.vue` with scoped CSS tokens in `switcher.css`.
-  - Handles keydown events, search filtering, visual tile rendering, and dispatches activation messages.
+  - Dispatches `OPEN_SWITCHER_HOST` and executes `/switcher.js` via `browser.scripting.executeScript`.
+  - Validates nonce sessions and responds to `ACTIVATE_TAB` messages using the asynchronous `sendResponse` pattern.
+- **Presentation Layer (`entrypoints/switcher.ts`, `entrypoints/frame.html`, `src/ui/`)**:
+  - Manages the open Shadow DOM host mounted on the active webpage containing a transparent extension iframe.
+  - Hosts `Switcher.vue` and `TabTile.vue` with scoped CSS tokens in `switcher.css` inside the extension frame.
+  - Handles keydown events, search filtering, visual tile rendering, queued release suppression, and dispatches activation messages.
 - **Domain Layer (`src/domain/`)**:
   - Pure, deterministic TypeScript with zero browser APIs and zero Vue dependencies.
   - Contains MRU sorting logic (`tab-order.ts`), single-letter hint allocation (`hint-allocator.ts`), and fuzzy tab search scoring (`tab-search.ts`).
 - **Application Layer (`src/application/`)**:
   - Bridges presentation and domain with runtime validation and navigation algorithms.
-  - Contains strictly typed and runtime-validated browser message contracts (`messages.ts`), grid selection navigation math (`selection.ts`), tab normalization, and background port interfaces.
+  - Contains strictly typed and runtime-validated browser message contracts (`messages.ts`), cryptographic nonce session store (`sessions.ts`), grid selection navigation math (`selection.ts`), tab normalization, and background port interfaces.
 
 ## 3. Engineering & Type Discipline
 

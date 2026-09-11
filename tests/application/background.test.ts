@@ -1,11 +1,24 @@
 import { expect, test } from 'vitest';
 import {
+  extractSenderContext,
+  handleActivateTabRequest,
+  handleCloseSwitcherSession,
+  handleHeartbeatSwitcherSession,
+  handleRequestSwitcherData,
+  isExtensionFrameUrl,
   isInjectablePageUrl,
   openCurrentWindowSwitcher,
+  type MessageSenderInfo,
   type SwitcherBackgroundPort,
 } from '../../src/application/background';
-import type { OpenSwitcherMessage } from '../../src/application/messages';
-import type { BrowserTabData } from '../../src/application/tab-operations';
+import type {
+  ActivateTabMessage,
+  HeartbeatSwitcherSessionMessage,
+  OpenSwitcherHostMessage,
+  RequestSwitcherDataMessage,
+} from '../../src/application/messages';
+import { createSessionStore } from '../../src/application/sessions';
+import type { BrowserTabData, TabActivationPort } from '../../src/application/tab-operations';
 
 test('isInjectablePageUrl accepts valid http and https URLs', () => {
   expect(isInjectablePageUrl('http://example.com')).toBe(true);
@@ -28,53 +41,103 @@ test('isInjectablePageUrl rejects non-injectable URLs and schemes', () => {
   expect(isInjectablePageUrl('not-a-valid-url')).toBe(false);
 });
 
-test('openCurrentWindowSwitcher stops before window query if active tab is missing or invalid', async () => {
-  const queriedWindows: number[] = [];
+test('isExtensionFrameUrl validates extension frame URLs', () => {
+  expect(isExtensionFrameUrl(undefined)).toBe(true);
+  expect(isExtensionFrameUrl('chrome-extension://xyz/frame.html')).toBe(true);
+  expect(isExtensionFrameUrl('chrome-extension://xyz/frame.html?sessionId=abc')).toBe(true);
+  expect(isExtensionFrameUrl('moz-extension://xyz/frame.html')).toBe(true);
+  expect(isExtensionFrameUrl('https://example.com/frame.html')).toBe(false);
+  expect(isExtensionFrameUrl('chrome-extension://xyz/other.html')).toBe(false);
+  expect(isExtensionFrameUrl('not-a-url')).toBe(false);
+});
+
+test('isExtensionFrameUrl validates extension frame URLs with expectedFrameUrl', () => {
+  const expected = 'chrome-extension://valid-extension-id/frame.html';
+  expect(isExtensionFrameUrl(undefined, expected)).toBe(false);
+  expect(isExtensionFrameUrl('', expected)).toBe(false);
+  expect(isExtensionFrameUrl('chrome-extension://valid-extension-id/frame.html', expected)).toBe(
+    true,
+  );
+  expect(
+    isExtensionFrameUrl('chrome-extension://valid-extension-id/frame.html?sessionId=abc', expected),
+  ).toBe(true);
+  expect(isExtensionFrameUrl('chrome-extension://attacker-extension-id/frame.html', expected)).toBe(
+    false,
+  );
+  expect(isExtensionFrameUrl('moz-extension://valid-extension-id/frame.html', expected)).toBe(
+    false,
+  );
+  expect(isExtensionFrameUrl('chrome-extension://valid-extension-id/other.html', expected)).toBe(
+    false,
+  );
+});
+
+test('extractSenderContext extracts valid context and rejects invalid', () => {
+  const validSender: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+    documentId: 'doc-1',
+    url: 'chrome-extension://xyz/frame.html',
+  };
+  expect(extractSenderContext(validSender)).toEqual({
+    tabId: 1,
+    windowId: 10,
+    frameId: 100,
+    documentId: 'doc-1',
+  });
+
+  expect(extractSenderContext({})).toBeNull();
+  expect(extractSenderContext({ tab: { id: 1, windowId: 10 } })).toBeNull();
+  expect(extractSenderContext({ tab: { id: -1, windowId: 10 }, frameId: 1 })).toBeNull();
+  expect(extractSenderContext({ tab: { id: 1, windowId: -1 }, frameId: 1 })).toBeNull();
+  expect(extractSenderContext({ tab: { id: 1, windowId: 10 }, frameId: -1 })).toBeNull();
+  expect(
+    extractSenderContext({
+      tab: { id: 1, windowId: 10 },
+      frameId: 1,
+      url: 'https://evil.com/page',
+    }),
+  ).toBeNull();
+});
+
+test('extractSenderContext enforces expectedFrameUrl when provided', () => {
+  const expected = 'chrome-extension://my-extension/frame.html';
+  const matchingSender: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+    url: 'chrome-extension://my-extension/frame.html?sessionId=123',
+  };
+  expect(extractSenderContext(matchingSender, expected)).toEqual({
+    tabId: 1,
+    windowId: 10,
+    frameId: 100,
+  });
+
+  const mismatchedSender: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+    url: 'chrome-extension://other-extension/frame.html?sessionId=123',
+  };
+  expect(extractSenderContext(mismatchedSender, expected)).toBeNull();
+});
+
+test('openCurrentWindowSwitcher returns null if active tab is missing or invalid', async () => {
+  const sessionStore = createSessionStore();
   const port: SwitcherBackgroundPort = {
     queryActiveTab: () => Promise.resolve(null),
-    queryWindowTabs: (windowId) => {
-      queriedWindows.push(windowId);
-      return Promise.resolve([]);
-    },
-    sendOpenMessage: () => Promise.resolve(),
+    sendOpenHostMessage: () => Promise.resolve(),
     injectSwitcher: () => Promise.resolve(),
+    getFrameUrl: (sid) => `chrome-extension://xyz/frame.html?sessionId=${sid}`,
+    sessionStore,
   };
 
   const result = await openCurrentWindowSwitcher(port);
-
-  expect(result).toBe(false);
-  expect(queriedWindows).toEqual([]);
+  expect(result).toBeNull();
+  expect(sessionStore.size()).toBe(0);
 });
 
-test('openCurrentWindowSwitcher stops before window query if active tab metadata is malformed', async () => {
-  const malformedTabs: BrowserTabData[] = [
-    { windowId: 1, url: 'https://example.com' }, // missing id
-    { id: -1, windowId: 1, url: 'https://example.com' }, // negative id
-    { id: 1, url: 'https://example.com' }, // missing windowId
-    { id: 1, windowId: -2, url: 'https://example.com' }, // negative windowId
-  ];
-
-  for (const malformed of malformedTabs) {
-    let windowQueried = false;
-    const port: SwitcherBackgroundPort = {
-      queryActiveTab: () => Promise.resolve(malformed),
-      queryWindowTabs: () => {
-        windowQueried = true;
-        return Promise.resolve([]);
-      },
-      sendOpenMessage: () => Promise.resolve(),
-      injectSwitcher: () => Promise.resolve(),
-    };
-
-    const result = await openCurrentWindowSwitcher(port);
-
-    expect(result).toBe(false);
-    expect(windowQueried).toBe(false);
-  }
-});
-
-test('openCurrentWindowSwitcher stops before window query if active tab has non-injectable URL', async () => {
-  let windowQueried = false;
+test('openCurrentWindowSwitcher returns null if active tab has non-injectable URL', async () => {
+  const sessionStore = createSessionStore();
   const port: SwitcherBackgroundPort = {
     queryActiveTab: () =>
       Promise.resolve({
@@ -82,240 +145,481 @@ test('openCurrentWindowSwitcher stops before window query if active tab has non-
         windowId: 1,
         url: 'chrome://extensions',
       }),
-    queryWindowTabs: () => {
-      windowQueried = true;
-      return Promise.resolve([]);
-    },
-    sendOpenMessage: () => Promise.resolve(),
+    sendOpenHostMessage: () => Promise.resolve(),
     injectSwitcher: () => Promise.resolve(),
+    getFrameUrl: (sid) => `chrome-extension://xyz/frame.html?sessionId=${sid}`,
+    sessionStore,
   };
 
   const result = await openCurrentWindowSwitcher(port);
-
-  expect(result).toBe(false);
-  expect(windowQueried).toBe(false);
+  expect(result).toBeNull();
+  expect(sessionStore.size()).toBe(0);
 });
 
-test('openCurrentWindowSwitcher sends open message without injection when listener is already present', async () => {
-  const callLog: string[] = [];
-  const receivedMessages: OpenSwitcherMessage[] = [];
+test('openCurrentWindowSwitcher creates session and sends host message without injection when listener is present', async () => {
+  const sessionStore = createSessionStore();
+  const sentMessages: OpenSwitcherHostMessage[] = [];
 
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: () => {
-      callLog.push('queryActiveTab');
-      return Promise.resolve({ id: 10, windowId: 1, url: 'https://example.com/page' });
-    },
-    queryWindowTabs: (windowId) => {
-      callLog.push(`queryWindowTabs:${windowId}`);
-      return Promise.resolve([
-        { id: 10, windowId: 1, title: 'Current Tab', lastAccessed: 500 },
-        { id: 20, windowId: 1, title: 'Other Tab', lastAccessed: 400 },
-      ]);
-    },
-    sendOpenMessage: (tabId, message) => {
-      callLog.push(`sendOpenMessage:${tabId}`);
-      receivedMessages.push(message);
+    queryActiveTab: () =>
+      Promise.resolve({
+        id: 10,
+        windowId: 1,
+        url: 'https://example.com',
+      }),
+    sendOpenHostMessage: (_tabId, msg) => {
+      sentMessages.push(msg);
       return Promise.resolve();
     },
-    injectSwitcher: (tabId) => {
-      callLog.push(`injectSwitcher:${tabId}`);
-      return Promise.resolve();
-    },
+    injectSwitcher: () => Promise.reject(new Error('Should not be called')),
+    getFrameUrl: (sid) => `chrome-extension://xyz/frame.html?sessionId=${sid}`,
+    sessionStore,
   };
 
-  const result = await openCurrentWindowSwitcher(port);
-
-  expect(result).toBe(true);
-  expect(callLog).toEqual(['queryActiveTab', 'queryWindowTabs:1', 'sendOpenMessage:10']);
-  expect(receivedMessages).toHaveLength(1);
-  const delivered = receivedMessages[0];
-  expect(delivered?.type).toBe('OPEN_SWITCHER');
-  expect(delivered?.tabs.map((t) => t.id)).toEqual([20]);
+  const session = await openCurrentWindowSwitcher(port);
+  expect(session).not.toBeNull();
+  expect(sessionStore.size()).toBe(1);
+  expect(sentMessages).toHaveLength(1);
+  expect(sentMessages[0]?.type).toBe('OPEN_SWITCHER_HOST');
+  expect(sentMessages[0]?.sessionId).toBe(session?.sessionId);
+  expect(sentMessages[0]?.frameUrl).toContain(session?.sessionId);
 });
 
-test('openCurrentWindowSwitcher injects once then resends when initial send fails', async () => {
-  const callLog: string[] = [];
-  let sendAttempt = 0;
+test('openCurrentWindowSwitcher injects then resends when initial send fails', async () => {
+  const sessionStore = createSessionStore();
+  let sendAttempts = 0;
+  let injected = false;
 
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: () => Promise.resolve({ id: 5, windowId: 2, url: 'https://app.dev' }),
-    queryWindowTabs: () =>
-      Promise.resolve([
-        { id: 5, windowId: 2, title: 'Active' },
-        { id: 6, windowId: 2, title: 'Second Tab', lastAccessed: 100 },
-      ]),
-    sendOpenMessage: (tabId) => {
-      sendAttempt++;
-      callLog.push(`sendOpenMessage:${tabId}:attempt${sendAttempt}`);
-      if (sendAttempt === 1) {
-        return Promise.reject(
-          new Error('Could not establish connection. Receiving end does not exist.'),
-        );
+    queryActiveTab: () =>
+      Promise.resolve({
+        id: 10,
+        windowId: 1,
+        url: 'https://example.com',
+      }),
+    sendOpenHostMessage: () => {
+      sendAttempts++;
+      if (sendAttempts === 1) {
+        return Promise.reject(new Error('No listener'));
       }
       return Promise.resolve();
     },
-    injectSwitcher: (tabId) => {
-      callLog.push(`injectSwitcher:${tabId}`);
+    injectSwitcher: () => {
+      injected = true;
       return Promise.resolve();
     },
+    getFrameUrl: (sid) => `chrome-extension://xyz/frame.html?sessionId=${sid}`,
+    sessionStore,
   };
 
-  const result = await openCurrentWindowSwitcher(port);
-
-  expect(result).toBe(true);
-  expect(callLog).toEqual([
-    'sendOpenMessage:5:attempt1',
-    'injectSwitcher:5',
-    'sendOpenMessage:5:attempt2',
-  ]);
+  const session = await openCurrentWindowSwitcher(port);
+  expect(session).not.toBeNull();
+  expect(injected).toBe(true);
+  expect(sendAttempts).toBe(2);
+  expect(sessionStore.size()).toBe(1);
 });
 
-test('openCurrentWindowSwitcher returns false without throwing when injection fails', async () => {
-  const callLog: string[] = [];
+test('openCurrentWindowSwitcher cleans up session if injection fails', async () => {
+  const sessionStore = createSessionStore();
 
   const port: SwitcherBackgroundPort = {
-    queryActiveTab: () => Promise.resolve({ id: 5, windowId: 2, url: 'https://app.dev' }),
-    queryWindowTabs: () => Promise.resolve([{ id: 5, windowId: 2, title: 'Active' }]),
-    sendOpenMessage: (tabId) => {
-      callLog.push(`sendOpenMessage:${tabId}`);
-      return Promise.reject(new Error('Connection failed'));
-    },
-    injectSwitcher: (tabId) => {
-      callLog.push(`injectSwitcher:${tabId}`);
-      return Promise.reject(new Error('Script injection blocked'));
-    },
+    queryActiveTab: () =>
+      Promise.resolve({
+        id: 10,
+        windowId: 1,
+        url: 'https://example.com',
+      }),
+    sendOpenHostMessage: () => Promise.reject(new Error('No listener')),
+    injectSwitcher: () => Promise.reject(new Error('Injection failed')),
+    getFrameUrl: (sid) => `chrome-extension://xyz/frame.html?sessionId=${sid}`,
+    sessionStore,
   };
 
-  const result = await openCurrentWindowSwitcher(port);
-
-  expect(result).toBe(false);
-  expect(callLog).toEqual(['sendOpenMessage:5', 'injectSwitcher:5']);
+  const session = await openCurrentWindowSwitcher(port);
+  expect(session).toBeNull();
+  expect(sessionStore.size()).toBe(0);
 });
 
-test('openCurrentWindowSwitcher returns false without throwing when second send fails', async () => {
-  const callLog: string[] = [];
-  let sendAttempts = 0;
-
-  const port: SwitcherBackgroundPort = {
-    queryActiveTab: () => Promise.resolve({ id: 5, windowId: 2, url: 'https://app.dev' }),
-    queryWindowTabs: () => Promise.resolve([{ id: 5, windowId: 2, title: 'Active' }]),
-    sendOpenMessage: (tabId) => {
-      sendAttempts++;
-      callLog.push(`sendOpenMessage:${tabId}:attempt${sendAttempts}`);
-      return Promise.reject(new Error('Send failed'));
-    },
-    injectSwitcher: (tabId) => {
-      callLog.push(`injectSwitcher:${tabId}`);
-      return Promise.resolve();
-    },
+test('handleRequestSwitcherData returns unauthorized for invalid or missing sender tab', async () => {
+  const sessionStore = createSessionStore();
+  const session = sessionStore.createSession(1, 10);
+  const msg: RequestSwitcherDataMessage = {
+    type: 'REQUEST_SWITCHER_DATA',
+    sessionId: session.sessionId,
   };
 
-  const result = await openCurrentWindowSwitcher(port);
+  const resNoTab = await handleRequestSwitcherData(
+    sessionStore,
+    () => Promise.resolve([]),
+    msg,
+    {},
+  );
+  expect(resNoTab).toEqual({ ok: false, reason: 'unauthorized' });
 
-  expect(result).toBe(false);
-  expect(callLog).toEqual([
-    'sendOpenMessage:5:attempt1',
-    'injectSwitcher:5',
-    'sendOpenMessage:5:attempt2',
-  ]);
+  const resInvalidTab = await handleRequestSwitcherData(
+    sessionStore,
+    () => Promise.resolve([]),
+    msg,
+    { tab: { id: -1, windowId: 10 }, frameId: 1 },
+  );
+  expect(resInvalidTab).toEqual({ ok: false, reason: 'unauthorized' });
 });
 
-test('openCurrentWindowSwitcher propagates query failures from active tab query', async () => {
-  const port: SwitcherBackgroundPort = {
-    queryActiveTab: () => Promise.reject(new Error('Tabs query failed')),
-    queryWindowTabs: () => Promise.resolve([]),
-    sendOpenMessage: () => Promise.resolve(),
-    injectSwitcher: () => Promise.resolve(),
+test('handleRequestSwitcherData returns unauthorized for unknown or mismatched session', async () => {
+  const sessionStore = createSessionStore();
+  const session = sessionStore.createSession(1, 10);
+
+  const resWrongTab = await handleRequestSwitcherData(
+    sessionStore,
+    () => Promise.resolve([]),
+    { type: 'REQUEST_SWITCHER_DATA', sessionId: session.sessionId },
+    { tab: { id: 2, windowId: 10 }, frameId: 1 },
+  );
+  expect(resWrongTab).toEqual({ ok: false, reason: 'unauthorized' });
+
+  const resUnknownSid = await handleRequestSwitcherData(
+    sessionStore,
+    () => Promise.resolve([]),
+    { type: 'REQUEST_SWITCHER_DATA', sessionId: 'fake-session' },
+    { tab: { id: 1, windowId: 10 }, frameId: 1 },
+  );
+  expect(resUnknownSid).toEqual({ ok: false, reason: 'unauthorized' });
+});
+
+test('handleRequestSwitcherData returns tabs for valid authorized session and sender, claiming session', async () => {
+  const sessionStore = createSessionStore();
+  const session = sessionStore.createSession(1, 10);
+
+  const mockWindowTabs: BrowserTabData[] = [
+    { id: 1, windowId: 10, title: 'Current Tab', lastAccessed: 200 },
+    { id: 2, windowId: 10, title: 'Other Tab', lastAccessed: 100 },
+  ];
+
+  const sender: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+    documentId: 'doc-1',
   };
 
-  await expect(openCurrentWindowSwitcher(port)).rejects.toThrow('Tabs query failed');
-});
+  const res = await handleRequestSwitcherData(
+    sessionStore,
+    () => Promise.resolve(mockWindowTabs),
+    { type: 'REQUEST_SWITCHER_DATA', sessionId: session.sessionId },
+    sender,
+  );
 
-test('openCurrentWindowSwitcher propagates query failures from window tabs query', async () => {
-  const port: SwitcherBackgroundPort = {
-    queryActiveTab: () => Promise.resolve({ id: 1, windowId: 1, url: 'https://example.com' }),
-    queryWindowTabs: () => Promise.reject(new Error('Window tabs query failed')),
-    sendOpenMessage: () => Promise.resolve(),
-    injectSwitcher: () => Promise.resolve(),
-  };
-
-  await expect(openCurrentWindowSwitcher(port)).rejects.toThrow('Window tabs query failed');
-});
-
-test('openCurrentWindowSwitcher excludes current tab and includes all same-window tabs beyond 10 in MRU order', async () => {
-  const allTabs: BrowserTabData[] = [];
-  // 15 tabs in window 1 with increasing recency
-  for (let i = 1; i <= 15; i++) {
-    allTabs.push({
-      id: i,
-      windowId: 1,
-      title: `Tab ${i}`,
-      lastAccessed: i * 10,
-    });
+  expect(res.ok).toBe(true);
+  if (res.ok) {
+    expect(res.tabs).toHaveLength(1);
+    expect(res.tabs[0]?.id).toBe(2);
   }
-  // 2 tabs in window 2
-  allTabs.push({ id: 100, windowId: 2, title: 'Other Win 1' });
-  allTabs.push({ id: 101, windowId: 2, title: 'Other Win 2' });
 
-  const deliveredMessages: OpenSwitcherMessage[] = [];
-  const port: SwitcherBackgroundPort = {
-    queryActiveTab: () => Promise.resolve({ id: 1, windowId: 1, url: 'https://example.com' }),
-    queryWindowTabs: () => Promise.resolve(allTabs),
-    sendOpenMessage: (_tabId, msg) => {
-      deliveredMessages.push(msg);
-      return Promise.resolve();
-    },
-    injectSwitcher: () => Promise.resolve(),
-  };
-
-  const result = await openCurrentWindowSwitcher(port);
-
-  expect(result).toBe(true);
-  expect(deliveredMessages).toHaveLength(1);
-  const sentMessage = deliveredMessages[0];
-  expect(sentMessage?.tabs).toHaveLength(14); // 15 minus active tab id 1
-  expect(sentMessage?.tabs.map((t) => t.id)).toEqual([
-    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2,
-  ]);
+  const stored = sessionStore.getSession(session.sessionId);
+  expect(stored?.claimedSender).toEqual({ frameId: 100, documentId: 'doc-1' });
 });
 
-test('openCurrentWindowSwitcher sends empty OPEN message when no other tabs exist in window', async () => {
-  const deliveredMessages: OpenSwitcherMessage[] = [];
-  const port: SwitcherBackgroundPort = {
-    queryActiveTab: () => Promise.resolve({ id: 1, windowId: 1, url: 'https://example.com' }),
-    queryWindowTabs: () => Promise.resolve([{ id: 1, windowId: 1, url: 'https://example.com' }]),
-    sendOpenMessage: (_tabId, msg) => {
-      deliveredMessages.push(msg);
-      return Promise.resolve();
-    },
-    injectSwitcher: () => Promise.resolve(),
+test('handleRequestSwitcherData rejects second sender attempting to claim already claimed session', async () => {
+  const sessionStore = createSessionStore();
+  const session = sessionStore.createSession(1, 10);
+
+  const sender1: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+    documentId: 'doc-1',
+  };
+  const senderCloned: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 200,
+    documentId: 'doc-2',
   };
 
-  const result = await openCurrentWindowSwitcher(port);
+  const res1 = await handleRequestSwitcherData(
+    sessionStore,
+    () => Promise.resolve([]),
+    { type: 'REQUEST_SWITCHER_DATA', sessionId: session.sessionId },
+    sender1,
+  );
+  expect(res1.ok).toBe(true);
 
-  expect(result).toBe(true);
-  expect(deliveredMessages).toEqual([
-    {
-      type: 'OPEN_SWITCHER',
-      tabs: [],
-    },
-  ]);
+  const resCloned = await handleRequestSwitcherData(
+    sessionStore,
+    () => Promise.resolve([]),
+    { type: 'REQUEST_SWITCHER_DATA', sessionId: session.sessionId },
+    senderCloned,
+  );
+  expect(resCloned).toEqual({ ok: false, reason: 'unauthorized' });
 });
 
-test('openCurrentWindowSwitcher preserves input immutability', async () => {
-  const activeTab = Object.freeze({ id: 1, windowId: 1, url: 'https://example.com' });
-  const windowTabs = Object.freeze([
-    activeTab,
-    Object.freeze({ id: 2, windowId: 1, title: 'Tab 2' }),
-  ]);
-
-  const port: SwitcherBackgroundPort = {
-    queryActiveTab: () => Promise.resolve(activeTab),
-    queryWindowTabs: () => Promise.resolve(windowTabs),
-    sendOpenMessage: () => Promise.resolve(),
-    injectSwitcher: () => Promise.resolve(),
+test('handleActivateTabRequest activates tab and removes session on success', async () => {
+  const sessionStore = createSessionStore();
+  const session = sessionStore.createSession(1, 10);
+  const sender: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
   };
 
-  const result = await openCurrentWindowSwitcher(port);
-  expect(result).toBe(true);
+  sessionStore.claimSession(session.sessionId, { tabId: 1, windowId: 10, frameId: 100 });
+
+  let activatedTabId = -1;
+  const activationPort: TabActivationPort = {
+    get: (id) => Promise.resolve({ id, windowId: 10, title: 'Target' }),
+    activate: (id) => {
+      activatedTabId = id;
+      return Promise.resolve();
+    },
+  };
+
+  const msg: ActivateTabMessage = {
+    type: 'ACTIVATE_TAB',
+    tabId: 2,
+    sessionId: session.sessionId,
+  };
+
+  const res = await handleActivateTabRequest(sessionStore, activationPort, msg, sender);
+
+  expect(res).toEqual({ ok: true });
+  expect(activatedTabId).toBe(2);
+  expect(sessionStore.size()).toBe(0);
+});
+
+test('handleActivateTabRequest rejects unauthorized sender or session', async () => {
+  const sessionStore = createSessionStore();
+  const session = sessionStore.createSession(1, 10);
+  sessionStore.claimSession(session.sessionId, { tabId: 1, windowId: 10, frameId: 100 });
+
+  const activationPort: TabActivationPort = {
+    get: (id) => Promise.resolve({ id, windowId: 10 }),
+    activate: () => Promise.resolve(),
+  };
+
+  const msg: ActivateTabMessage = {
+    type: 'ACTIVATE_TAB',
+    tabId: 2,
+    sessionId: session.sessionId,
+  };
+
+  const res = await handleActivateTabRequest(sessionStore, activationPort, msg, {
+    tab: { id: 99, windowId: 10 },
+    frameId: 100,
+  });
+
+  expect(res).toEqual({ ok: false, reason: 'unauthorized' });
+  expect(sessionStore.size()).toBe(1);
+});
+
+test('handleActivateTabRequest returns tab-unavailable when target tab does not exist and preserves session for recovery', async () => {
+  const sessionStore = createSessionStore();
+  const session = sessionStore.createSession(1, 10);
+  sessionStore.claimSession(session.sessionId, { tabId: 1, windowId: 10, frameId: 100 });
+
+  const activationPort: TabActivationPort = {
+    get: () => Promise.reject(new Error('Tab not found')),
+    activate: () => Promise.resolve(),
+  };
+
+  const msg: ActivateTabMessage = {
+    type: 'ACTIVATE_TAB',
+    tabId: 999,
+    sessionId: session.sessionId,
+  };
+
+  const res = await handleActivateTabRequest(sessionStore, activationPort, msg, {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+  });
+
+  expect(res).toEqual({ ok: false, reason: 'tab-unavailable' });
+  expect(sessionStore.size()).toBe(1);
+});
+
+test('handleActivateTabRequest returns wrong-window when target tab belongs to different window', async () => {
+  const sessionStore = createSessionStore();
+  const session = sessionStore.createSession(1, 10);
+  sessionStore.claimSession(session.sessionId, { tabId: 1, windowId: 10, frameId: 100 });
+
+  const activationPort: TabActivationPort = {
+    get: (id) => Promise.resolve({ id, windowId: 999, title: 'Other Window Tab' }),
+    activate: () => Promise.resolve(),
+  };
+
+  const msg: ActivateTabMessage = {
+    type: 'ACTIVATE_TAB',
+    tabId: 5,
+    sessionId: session.sessionId,
+  };
+
+  const res = await handleActivateTabRequest(sessionStore, activationPort, msg, {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+  });
+
+  expect(res).toEqual({ ok: false, reason: 'wrong-window' });
+  expect(sessionStore.size()).toBe(1);
+});
+
+test('handleHeartbeatSwitcherSession validates and refreshes session liveness', () => {
+  const sessionStore = createSessionStore();
+  const now = Date.now();
+  const session = sessionStore.createSession(1, 10, now);
+  const sender: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+  };
+
+  sessionStore.claimSession(session.sessionId, { tabId: 1, windowId: 10, frameId: 100 }, now);
+
+  const msg: HeartbeatSwitcherSessionMessage = {
+    type: 'HEARTBEAT_SWITCHER_SESSION',
+    sessionId: session.sessionId,
+  };
+
+  const res = handleHeartbeatSwitcherSession(sessionStore, msg, sender);
+  expect(res).toEqual({ ok: true });
+  expect(sessionStore.getSession(session.sessionId)?.lastSeenAt).toBeGreaterThanOrEqual(now);
+});
+
+test('handleHeartbeatSwitcherSession rejects unauthorized sender or unclaimed session', () => {
+  const sessionStore = createSessionStore();
+  const now = Date.now();
+  const session = sessionStore.createSession(1, 10, now);
+
+  const msg: HeartbeatSwitcherSessionMessage = {
+    type: 'HEARTBEAT_SWITCHER_SESSION',
+    sessionId: session.sessionId,
+  };
+
+  const resUnclaimed = handleHeartbeatSwitcherSession(sessionStore, msg, {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+  });
+  expect(resUnclaimed).toEqual({ ok: false, reason: 'unauthorized' });
+
+  sessionStore.claimSession(session.sessionId, { tabId: 1, windowId: 10, frameId: 100 }, now);
+
+  const resWrongSender = handleHeartbeatSwitcherSession(sessionStore, msg, {
+    tab: { id: 1, windowId: 10 },
+    frameId: 200,
+  });
+  expect(resWrongSender).toEqual({ ok: false, reason: 'unauthorized' });
+});
+
+test('handleCloseSwitcherSession removes session for matching sender', () => {
+  const sessionStore = createSessionStore();
+  const session = sessionStore.createSession(1, 10);
+  sessionStore.claimSession(session.sessionId, { tabId: 1, windowId: 10, frameId: 100 });
+
+  const wrongSender: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 200,
+  };
+  expect(
+    handleCloseSwitcherSession(
+      sessionStore,
+      { type: 'CLOSE_SWITCHER_SESSION', sessionId: session.sessionId },
+      wrongSender,
+    ),
+  ).toBe(false);
+  expect(sessionStore.size()).toBe(1);
+
+  const correctSender: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+  };
+  expect(
+    handleCloseSwitcherSession(
+      sessionStore,
+      { type: 'CLOSE_SWITCHER_SESSION', sessionId: session.sessionId },
+      correctSender,
+    ),
+  ).toBe(true);
+  expect(sessionStore.size()).toBe(0);
+});
+
+test('background message handlers reject sender with mismatched expectedFrameUrl', async () => {
+  const sessionStore = createSessionStore();
+  const session = sessionStore.createSession(1, 10);
+  const expectedUrl = 'chrome-extension://my-extension/frame.html';
+  const mismatchedSender: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+    url: 'chrome-extension://other-extension/frame.html',
+  };
+
+  const reqResult = await handleRequestSwitcherData(
+    sessionStore,
+    () => Promise.resolve([]),
+    { type: 'REQUEST_SWITCHER_DATA', sessionId: session.sessionId },
+    mismatchedSender,
+    expectedUrl,
+  );
+  expect(reqResult).toEqual({ ok: false, reason: 'unauthorized' });
+
+  const actResult = await handleActivateTabRequest(
+    sessionStore,
+    { get: () => Promise.resolve({ id: 2, windowId: 10 }), activate: () => Promise.resolve() },
+    { type: 'ACTIVATE_TAB', sessionId: session.sessionId, tabId: 2 },
+    mismatchedSender,
+    expectedUrl,
+  );
+  expect(actResult).toEqual({ ok: false, reason: 'unauthorized' });
+
+  const heartbeatResult = handleHeartbeatSwitcherSession(
+    sessionStore,
+    { type: 'HEARTBEAT_SWITCHER_SESSION', sessionId: session.sessionId },
+    mismatchedSender,
+    expectedUrl,
+  );
+  expect(heartbeatResult).toEqual({ ok: false, reason: 'unauthorized' });
+
+  const closeResult = handleCloseSwitcherSession(
+    sessionStore,
+    { type: 'CLOSE_SWITCHER_SESSION', sessionId: session.sessionId },
+    mismatchedSender,
+    expectedUrl,
+  );
+  expect(closeResult).toBe(false);
+});
+
+test('background message handlers reject sender with missing url when expectedFrameUrl is provided', async () => {
+  const sessionStore = createSessionStore();
+  const session = sessionStore.createSession(1, 10);
+  const expectedUrl = 'chrome-extension://my-extension/frame.html';
+  const missingUrlSender: MessageSenderInfo = {
+    tab: { id: 1, windowId: 10 },
+    frameId: 100,
+  };
+
+  const reqResult = await handleRequestSwitcherData(
+    sessionStore,
+    () => Promise.resolve([]),
+    { type: 'REQUEST_SWITCHER_DATA', sessionId: session.sessionId },
+    missingUrlSender,
+    expectedUrl,
+  );
+  expect(reqResult).toEqual({ ok: false, reason: 'unauthorized' });
+
+  const actResult = await handleActivateTabRequest(
+    sessionStore,
+    { get: () => Promise.resolve({ id: 2, windowId: 10 }), activate: () => Promise.resolve() },
+    { type: 'ACTIVATE_TAB', sessionId: session.sessionId, tabId: 2 },
+    missingUrlSender,
+    expectedUrl,
+  );
+  expect(actResult).toEqual({ ok: false, reason: 'unauthorized' });
+
+  const heartbeatResult = handleHeartbeatSwitcherSession(
+    sessionStore,
+    { type: 'HEARTBEAT_SWITCHER_SESSION', sessionId: session.sessionId },
+    missingUrlSender,
+    expectedUrl,
+  );
+  expect(heartbeatResult).toEqual({ ok: false, reason: 'unauthorized' });
+
+  const closeResult = handleCloseSwitcherSession(
+    sessionStore,
+    { type: 'CLOSE_SWITCHER_SESSION', sessionId: session.sessionId },
+    missingUrlSender,
+    expectedUrl,
+  );
+  expect(closeResult).toBe(false);
 });

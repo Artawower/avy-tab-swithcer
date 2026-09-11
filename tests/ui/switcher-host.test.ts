@@ -1,77 +1,186 @@
-import { beforeEach, expect, test } from 'vitest';
-import { createSwitcherHost, SWITCHER_HOST_ID } from '../../src/ui/switcher-host';
+import { expect, test } from 'vitest';
+import {
+  createSwitcherHost,
+  getDeepActiveElement,
+  SWITCHER_HOST_ID,
+} from '../../src/ui/switcher-host';
 
-beforeEach(() => {
-  const existing = document.getElementById(SWITCHER_HOST_ID);
-  if (existing) {
-    existing.remove();
+test('creates singleton host with open shadow root, title, and hidden iframe', () => {
+  const controller = createSwitcherHost(document);
+  try {
+    expect(controller.host.id).toBe(SWITCHER_HOST_ID);
+    expect(controller.shadow).toBe(controller.host.shadowRoot);
+    expect(controller.iframe.parentNode).toBe(controller.shadow);
+    expect(controller.iframe.title).toBe('Avy Tab Switcher');
+    expect(controller.isOpen()).toBe(false);
+
+    const secondController = createSwitcherHost(document);
+    expect(secondController.host).toBe(controller.host);
+    expect(secondController.iframe).toBe(controller.iframe);
+  } finally {
+    controller.destroy();
   }
 });
 
-test('createSwitcherHost creates host under documentElement with open shadow root, style, and container', () => {
-  const cssText = '.test-class { color: red; }';
-  const container = createSwitcherHost(document, cssText);
+test('open shows and focuses iframe; close hides iframe and restores prior page focus', () => {
+  const input = document.createElement('input');
+  document.body.appendChild(input);
+  input.focus();
+  expect(document.activeElement).toBe(input);
 
-  expect(container).not.toBeNull();
-  if (!container) {
-    throw new Error('Expected container to be non-null');
-  }
-  expect(container.className).toBe('switcher-container');
+  const controller = createSwitcherHost(document);
+  try {
+    controller.open('about:blank?sessionId=session-1');
+    expect(controller.isOpen()).toBe(true);
+    expect(controller.iframe.style.display).toBe('block');
+    expect(controller.iframe.src).toBe('about:blank?sessionId=session-1');
 
-  const host = document.getElementById(SWITCHER_HOST_ID);
-  expect(host).not.toBeNull();
-  if (!host) {
-    throw new Error('Expected host to be non-null');
-  }
-  expect(host.parentElement).toBe(document.documentElement);
-
-  const shadow = host.shadowRoot;
-  expect(shadow).not.toBeNull();
-  if (!shadow) {
-    throw new Error('Expected shadowRoot to be non-null');
-  }
-  expect(shadow.mode).toBe('open');
-
-  const style = shadow.querySelector('style');
-  expect(style).not.toBeNull();
-  expect(style?.textContent).toBe(cssText);
-
-  expect(shadow.contains(container)).toBe(true);
-});
-
-test('createSwitcherHost sets critical inline styles on host with important priority', () => {
-  createSwitcherHost(document, '');
-  const host = document.getElementById(SWITCHER_HOST_ID);
-
-  expect(host).not.toBeNull();
-  if (host) {
-    expect(host.style.getPropertyValue('all')).toBe('initial');
-    expect(host.style.getPropertyPriority('all')).toBe('important');
-
-    expect(host.style.getPropertyValue('position')).toBe('fixed');
-    expect(host.style.getPropertyPriority('position')).toBe('important');
-
-    expect(host.style.getPropertyValue('inset')).toBe('0');
-    expect(host.style.getPropertyPriority('inset')).toBe('important');
-
-    expect(host.style.getPropertyValue('z-index')).toBe('2147483647');
-    expect(host.style.getPropertyPriority('z-index')).toBe('important');
-
-    expect(host.style.getPropertyValue('pointer-events')).toBe('none');
-    expect(host.style.getPropertyPriority('pointer-events')).toBe('important');
-
-    expect(host.style.getPropertyValue('background')).toBe('transparent');
-    expect(host.style.getPropertyPriority('background')).toBe('important');
+    controller.close();
+    expect(controller.isOpen()).toBe(false);
+    expect(controller.iframe.style.display).toBe('none');
+    expect(document.activeElement).toBe(input);
+  } finally {
+    controller.destroy();
+    input.remove();
   }
 });
 
-test('createSwitcherHost is idempotent and returns null when host already exists', () => {
-  const firstContainer = createSwitcherHost(document, 'body {}');
-  expect(firstContainer).not.toBeNull();
+test('destroy cleans up listeners, restores prior focus when open, and removes host', () => {
+  const input = document.createElement('input');
+  document.body.appendChild(input);
+  input.focus();
+  expect(document.activeElement).toBe(input);
 
-  const secondContainer = createSwitcherHost(document, 'body {}');
-  expect(secondContainer).toBeNull();
+  const controller = createSwitcherHost(document);
+  controller.open('about:blank?sessionId=session-destroy');
+  expect(controller.isOpen()).toBe(true);
 
-  const allHosts = document.querySelectorAll(`#${SWITCHER_HOST_ID}`);
-  expect(allHosts).toHaveLength(1);
+  controller.destroy();
+  expect(controller.isOpen()).toBe(false);
+  expect(document.getElementById(SWITCHER_HOST_ID)).toBeNull();
+  expect(document.activeElement).toBe(input);
+
+  input.remove();
+});
+
+test('preserves deliberate focus shift to another page element on close', () => {
+  const inputA = document.createElement('input');
+  const inputB = document.createElement('input');
+  document.body.appendChild(inputA);
+  document.body.appendChild(inputB);
+  inputA.focus();
+  expect(document.activeElement).toBe(inputA);
+
+  const controller = createSwitcherHost(document);
+  try {
+    controller.open('about:blank?sessionId=session-1');
+
+    inputB.focus();
+    expect(document.activeElement).toBe(inputB);
+
+    controller.close();
+    expect(document.activeElement).toBe(inputB);
+  } finally {
+    controller.destroy();
+    inputA.remove();
+    inputB.remove();
+  }
+});
+
+test('handles disconnected prior focus element safely', () => {
+  const input = document.createElement('input');
+  document.body.appendChild(input);
+  input.focus();
+
+  const controller = createSwitcherHost(document);
+  try {
+    controller.open('about:blank?sessionId=session-1');
+    input.remove();
+
+    expect(() => controller.close()).not.toThrow();
+    expect(document.activeElement).not.toBe(input);
+  } finally {
+    controller.destroy();
+  }
+});
+
+test('preserves and restores deep active element inside shadow root', () => {
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  const shadow = host.attachShadow({ mode: 'open' });
+  const innerInput = document.createElement('input');
+  shadow.appendChild(innerInput);
+  innerInput.focus();
+
+  expect(getDeepActiveElement(document)).toBe(innerInput);
+
+  const controller = createSwitcherHost(document);
+  try {
+    controller.open('about:blank?sessionId=session-1');
+    controller.close();
+
+    expect(shadow.activeElement).toBe(innerInput);
+  } finally {
+    controller.destroy();
+    host.remove();
+  }
+});
+
+test('reasserts iframe focus when iframe blurs while host is open and document has focus', async () => {
+  const input = document.createElement('input');
+  document.body.appendChild(input);
+  input.focus();
+
+  const controller = createSwitcherHost(document);
+  try {
+    controller.open('about:blank?sessionId=session-focus');
+    expect(controller.isOpen()).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const originalHasFocus = document.hasFocus.bind(document);
+    document.hasFocus = () => true;
+
+    try {
+      input.focus();
+      controller.iframe.dispatchEvent(new Event('blur'));
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(
+        document.activeElement === controller.iframe ||
+          controller.shadow.activeElement === controller.iframe,
+      ).toBe(true);
+    } finally {
+      document.hasFocus = originalHasFocus;
+    }
+  } finally {
+    controller.destroy();
+    input.remove();
+  }
+});
+
+test('does not reassert iframe focus if document does not have focus', async () => {
+  const input = document.createElement('input');
+  document.body.appendChild(input);
+
+  const controller = createSwitcherHost(document);
+  try {
+    controller.open('about:blank?sessionId=session-no-focus');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const originalHasFocus = document.hasFocus.bind(document);
+    document.hasFocus = () => false;
+
+    try {
+      input.focus();
+      controller.iframe.dispatchEvent(new Event('blur'));
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(document.activeElement).toBe(input);
+    } finally {
+      document.hasFocus = originalHasFocus;
+    }
+  } finally {
+    controller.destroy();
+    input.remove();
+  }
 });

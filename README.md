@@ -19,13 +19,16 @@ Avy Tab Switcher is a keyboard-first, visual MRU (most recently used) tab switch
 entrypoints/
 ├── background.ts          # Privileged MV3 service worker / background script:
 │                          # - Listens for open-switcher command (Alt+Q)
+│                          # - Manages nonce-authorized switcher sessions
 │                          # - Queries current window tabs via browser.tabs.query
 │                          # - Injects switcher.js via browser.scripting.executeScript
-│                          # - Dispatches typed OPEN_SWITCHER messages
+│                          # - Dispatches typed OPEN_SWITCHER_HOST messages
 │                          # - Handles typed ACTIVATE_TAB messages with sendResponse
+├── frame.html             # Extension-origin frame page (web_accessible_resource):
+│                          # - Hosts Vue application in isolated extension execution context
 └── switcher.ts            # Unlisted content script injected programmatically:
-                           # - Listens for runtime OPEN_SWITCHER messages
-                           # - Mounts Switcher.vue inside Shadow DOM host
+                           # - Manages open Shadow DOM host with transparent extension iframe
+                           # - Preserves and restores host page prior focus
 
 src/
 ├── domain/                # Pure business logic (zero browser APIs, zero Vue dependencies):
@@ -35,12 +38,14 @@ src/
 │   └── tab-search.ts      # Score-ranked title/hostname search matching
 ├── application/           # Application orchestration & contracts:
 │   ├── background.ts      # Pure background port orchestration & URL injectability checks
+│   ├── sessions.ts        # Cryptographic nonce session store with TTL & cleanup
 │   ├── tab-operations.ts  # Window tab normalization and safe tab activation logic
 │   ├── selection.ts       # Grid column math and visual arrow navigation
 │   └── messages.ts        # Typed and runtime-validated message contracts & guards
 └── ui/                    # Presentation layer:
     ├── Switcher.vue       # Main switcher overlay, search input, and keyboard event routing
     ├── TabTile.vue        # Individual tab card rendering title, favicon (with fallback), and hint
+    ├── frame-main.ts      # Extension frame Vue app mounting and runtime messaging
     ├── switcher-host.ts   # Shadow DOM container creation and idempotent host reuse
     └── switcher.css       # Complete scoped component styling and theme tokens
 ```
@@ -141,6 +146,19 @@ Browser security policies prevent extensions from injecting content scripts into
 
 When `Alt+Q` is pressed on a restricted page, the extension exits gracefully without alert dialogs, errors, or permission escalation.
 
+### Keyboard Isolation & Event Handling
+
+Avy Tab Switcher isolates all overlay execution and event routing within an extension-origin frame to guarantee keyboard containment:
+
+- **Extension-Origin Frame Boundary & Content-Script/Page Isolation**: The switcher UI mounts inside a transparent, focused `chrome-extension://` / `moz-extension://` iframe hosted within a runtime-injected open Shadow DOM container. Keystroke containment guarantees content-script and host-page isolation while the modal frame owns focus; the host webpage and other content scripts have zero access to keystrokes while the frame is focused.
+- **Focus Reassertion**: If host-page code programmatically focuses an element on the webpage while the switcher is open, the host controller detects iframe blur and reasserts iframe focus as long as the host remains open, the top document still has focus, and the tab is visible. It deliberately does not fight browser chrome (such as address bar navigation), OS window changes, hidden/inactive tabs, or overlay closing.
+- **No Host-Page Keyboard Listeners**: The extension registers zero keyboard listeners on the host webpage's `window` or `document`. Keystrokes are intercepted exclusively by the focused extension frame, eliminating race conditions with pre-existing capture listeners or input-ignoring extension scripts.
+- **Generic Keyup Containment & Matching-Keyup Activation**: Keyboard actions (mnemonic quick-selection, Enter activation, and Escape dismissal) initiate on keydown and execute upon the matching `keyup` event. All trailing key releases within the frame are generically consumed, ensuring that releasing an activation or dismissal key never leaks into the underlying page or newly activated target tab.
+- **Timeout & Blur Cancellation**: If an activation or dismissal key is held continuously beyond an 800 ms safety threshold, or if the window loses focus (`window.blur`), the pending action is cancelled cleanly (`pendingAction = null`). The overlay remains open and usable, and the eventual key release is absorbed without executing premature tab switches or leaking keys. Repeated keydowns (`event.repeat`) while an action is pending are strictly suppressed.
+- **Heartbeat & Exclusively Claimed Sessions**: On mount, the frame queries initial tab data with a cryptographically random, exclusively claimed session nonce. The background service worker binds this nonce to the sender's exact `frameId` and `documentId`. An active 15-second heartbeat loop refreshes session liveness; if the heartbeat fails or the 60-second rolling idle expiry elapses without activity, the frame initiates graceful teardown. Cloned or unauthorized frames attempting to reuse or claim the session nonce are rejected.
+- **Deep Prior Focus Preservation & Restoration**: When the switcher opens, the content script records the active deep-focused element (traversing nested open shadow roots). When the overlay closes or is destroyed, focus is faithfully restored to that prior element if it remains connected.
+- **Browser-Level Shortcut Limitations**: Browser-reserved accelerator shortcuts (such as `Ctrl+W`, `Cmd+Q`, `Alt+F4`, or address bar navigation) are handled by the browser chrome at the native OS/browser layer and cannot be intercepted by extension frames or web content.
+
 ## Developer Interface (`justfile`)
 
 All common workflows are standardized via the root `justfile`:
@@ -199,14 +217,16 @@ Use this checklist to verify core behaviors before releases:
 20. [ ] **Dark Theme**: Operating system dark mode (`prefers-color-scheme: dark`) applies dark palette seamlessly.
 21. [ ] **Reduced Motion**: Setting `prefers-reduced-motion: reduce` disables CSS transitions and transforms.
 22. [ ] **Shadow DOM Isolation**: Host page CSS styles do not leak into or distort switcher UI elements.
-23. [ ] **Event Handling**: Handled switcher keys and navigation keys prevent default behavior and stop event propagation.
-24. [ ] **Chrome MV3 Compatibility**: Operates without errors in current supported Chrome/Chromium.
-25. [ ] **Firefox MV3 Compatibility**: Operates without errors in current supported Firefox.
-26. [ ] **Graceful Restricted Pages**: Invoking on internal/store pages (`chrome://`, `about:`) fails silently without uncaught errors.
-27. [ ] **Background Command Activation**: Triggering `Alt+Q` reliably invokes the switcher.
-28. [ ] **Deterministic Mnemonic Hinting**: Tabs receive stable hints derived first from title characters, then hostname.
-29. [ ] **Deterministic Recency Tie-Breaking**: Tabs with missing or identical timestamps break ties by ascending tab ID.
-30. [ ] **Stale-Tab Recovery**: If a displayed target tab closes before activation, clicking its tile removes the tab and reopens the overlay without switching windows or crashing.
+23. [ ] **Frame Keyboard & Focus Containment**: The host webpage and other extension scripts receive zero keystrokes while the modal frame owns focus, and programmatic page focus shifts are automatically reasserted back to the frame.
+24. [ ] **Long-Hold Release Safety**: Holding Escape or a mnemonic key for >800 ms cancels the pending action without closing or switching tabs, and subsequent release leaks no keys to the page.
+25. [ ] **Prior Deep Focus Restoration**: Dismissing the switcher or activating a tab faithfully restores focus to the prior deeply-focused element on the page.
+26. [ ] **Chrome MV3 Compatibility**: Operates without errors in current supported Chrome/Chromium.
+27. [ ] **Firefox MV3 Compatibility**: Operates without errors in current supported Firefox.
+28. [ ] **Graceful Restricted Pages**: Invoking on internal/store pages (`chrome://`, `about:`) fails silently without uncaught errors.
+29. [ ] **Background Command Activation**: Triggering `Alt+Q` reliably invokes the switcher.
+30. [ ] **Deterministic Mnemonic Hinting**: Tabs receive stable hints derived first from title characters, then hostname.
+31. [ ] **Deterministic Recency Tie-Breaking**: Tabs with missing or identical timestamps break ties by ascending tab ID.
+32. [ ] **Stale-Tab Recovery**: If a displayed target tab closes before activation, clicking its tile removes the tab and reopens the overlay without switching windows or crashing.
 
 ## Packaging & Releases
 

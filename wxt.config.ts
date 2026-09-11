@@ -8,6 +8,12 @@ export default defineConfig({
     version: '0.1.0',
     description: 'Keyboard-driven tab switcher using jump labels.',
     permissions: ['tabs', 'activeTab', 'scripting'],
+    web_accessible_resources: [
+      {
+        resources: ['frame.html'],
+        matches: ['<all_urls>'],
+      },
+    ],
     commands: {
       'open-switcher': {
         description: 'Open the tab switcher',

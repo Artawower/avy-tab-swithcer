@@ -1,6 +1,7 @@
 import {
   test as base,
   type BrowserContext,
+  type FrameLocator,
   type Page,
   type Worker,
   chromium,
@@ -8,9 +9,6 @@ import {
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { OpenSwitcherMessage } from '../src/application/messages';
-import { getCurrentWindowTabs, type BrowserTabData } from '../src/application/tab-operations';
-
 declare global {
   interface ChromeTab {
     readonly id?: number | undefined;
@@ -32,46 +30,17 @@ declare global {
         readonly currentWindow?: boolean | undefined;
         readonly windowId?: number | undefined;
       }) => Promise<readonly ChromeTab[]>;
-      readonly sendMessage: (tabId: number, message: unknown) => Promise<void>;
-      readonly update: (
-        tabId: number,
-        updateProperties: { readonly active: boolean },
-      ) => Promise<ChromeTab>;
-    };
-    readonly scripting: {
-      readonly executeScript: (injection: {
-        readonly target: { readonly tabId: number };
-        readonly files: readonly string[];
-      }) => Promise<unknown>;
     };
   };
-}
-
-function toBrowserTabData(tab: ChromeTab): BrowserTabData {
-  const data: {
-    id?: number;
-    windowId?: number;
-    title?: string;
-    url?: string;
-    favIconUrl?: string;
-    lastAccessed?: number;
-  } = {};
-
-  if (tab.id !== undefined) data.id = tab.id;
-  if (tab.windowId !== undefined) data.windowId = tab.windowId;
-  if (tab.title !== undefined) data.title = tab.title;
-  if (tab.url !== undefined) data.url = tab.url;
-  if (tab.favIconUrl !== undefined) data.favIconUrl = tab.favIconUrl;
-  if (tab.lastAccessed !== undefined) data.lastAccessed = tab.lastAccessed;
-
-  return data;
 }
 
 export interface ExtensionTestFixtures {
   readonly context: BrowserContext;
   readonly serviceWorker: Worker;
-  readonly openSwitcher: (targetPage: Page) => Promise<void>;
+  readonly openSwitcher: (targetPage: Page) => Promise<FrameLocator>;
+  readonly switcherFrame: (targetPage: Page) => FrameLocator;
   readonly getActiveTabTitle: () => Promise<string | undefined>;
+  readonly getExtensionId: () => string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -125,7 +94,7 @@ export const test = base.extend<ExtensionTestFixtures>({
 
       fs.writeFileSync(manifestPath, JSON.stringify(patchedManifest, null, 2));
 
-      const isHeadless = Boolean(process.env.CI || process.env.HEADLESS);
+      const isHeadless = !(process.env.HEADED === '1' || process.env.HEADED === 'true');
       const args = [
         `--disable-extensions-except=${extensionDir}`,
         `--load-extension=${extensionDir}`,
@@ -155,53 +124,27 @@ export const test = base.extend<ExtensionTestFixtures>({
   },
 
   openSwitcher: async ({ serviceWorker }, use) => {
-    // WHY: Playwright/CDP keyboard events do not reliably trigger browser-level commands accelerators (Alt+Q).
-    // We bypass keyboard dispatch by querying current-window tabs from the service worker, reusing production
-    // getCurrentWindowTabs for MRU ordering, injecting /switcher.js, and sending an OPEN_SWITCHER message.
-    const fn = async (targetPage: Page): Promise<void> => {
-      const snapshot = await serviceWorker.evaluate(async () => {
-        const [active] = await chrome.tabs.query({
-          active: true,
-          currentWindow: true,
-        });
-        const windowId = active?.windowId;
-        const windowTabs = windowId !== undefined ? await chrome.tabs.query({ windowId }) : [];
-        return {
-          activeTab: active,
-          windowTabs,
-        };
+    const fn = async (targetPage: Page): Promise<FrameLocator> => {
+      await targetPage.bringToFront();
+      await serviceWorker.evaluate(async () => {
+        if (globalThis.__avyTriggerOpen) {
+          await globalThis.__avyTriggerOpen();
+        }
       });
 
-      const active = snapshot.activeTab;
-      if (!active || typeof active.id !== 'number' || typeof active.windowId !== 'number') {
-        throw new Error('No active tab found in current window');
-      }
-
-      const tabs = getCurrentWindowTabs(
-        snapshot.windowTabs.map(toBrowserTabData),
-        active.id,
-        active.windowId,
-      );
-
-      const message: OpenSwitcherMessage = {
-        type: 'OPEN_SWITCHER',
-        tabs,
-      };
-
-      await serviceWorker.evaluate(
-        async ({ tabId, message }) => {
-          await chrome.scripting.executeScript({
-            target: { tabId },
-            files: ['/switcher.js'],
-          });
-          await chrome.tabs.sendMessage(tabId, message);
-        },
-        { tabId: active.id, message },
-      );
-
-      await targetPage.locator('.switcher-overlay').waitFor({ state: 'visible', timeout: 5000 });
+      const frame = targetPage.frameLocator('#avy-tab-switcher-root iframe');
+      await frame.locator('.switcher-overlay').waitFor({ state: 'visible', timeout: 5000 });
+      await targetPage.locator('#avy-tab-switcher-root iframe').focus();
+      return frame;
     };
 
+    await use(fn);
+  },
+
+  switcherFrame: async ({}, use) => {
+    const fn = (targetPage: Page): FrameLocator => {
+      return targetPage.frameLocator('#avy-tab-switcher-root iframe');
+    };
     await use(fn);
   },
 
@@ -216,6 +159,18 @@ export const test = base.extend<ExtensionTestFixtures>({
       });
     };
 
+    await use(fn);
+  },
+
+  getExtensionId: async ({ serviceWorker }, use) => {
+    const fn = (): string => {
+      const swUrl = serviceWorker.url();
+      const match = swUrl.match(/chrome-extension:\/\/([a-z0-9]+)\//);
+      if (!match || !match[1]) {
+        throw new Error(`Could not parse extension ID from SW URL: ${swUrl}`);
+      }
+      return match[1];
+    };
     await use(fn);
   },
 });

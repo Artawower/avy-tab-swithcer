@@ -1,5 +1,5 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { nextTick } from 'vue';
 import Switcher from '../../src/ui/Switcher.vue';
 import { createTab } from '../fixtures/tab';
@@ -8,6 +8,17 @@ enableAutoUnmount(afterEach);
 
 function dispatchKey(key: string, options?: Partial<KeyboardEventInit>): KeyboardEvent {
   const event = new KeyboardEvent('keydown', {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...options,
+  });
+  window.dispatchEvent(event);
+  return event;
+}
+
+function dispatchKeyUp(key: string, options?: Partial<KeyboardEventInit>): KeyboardEvent {
+  const event = new KeyboardEvent('keyup', {
     key,
     bubbles: true,
     cancelable: true,
@@ -316,7 +327,7 @@ test('Switcher resets state when tabs prop changes while open', async () => {
 
 // Keyboard navigation tests
 
-test('quick initially selects previous MRU and search is not focused', () => {
+test('quick initially selects previous MRU with readonly search input', async () => {
   const tabs = [
     createTab({ id: 10, title: 'Previous MRU Tab', lastAccessed: 500 }),
     createTab({ id: 20, title: 'Older Tab', lastAccessed: 200 }),
@@ -326,6 +337,8 @@ test('quick initially selects previous MRU and search is not focused', () => {
     attachTo: document.body,
   });
 
+  await nextTick();
+
   const tiles = wrapper.findAll('.tab-tile');
   expect(tiles[0]?.classes()).toContain('tab-tile--selected');
   expect(tiles[0]?.text()).toContain('Previous MRU Tab');
@@ -333,10 +346,9 @@ test('quick initially selects previous MRU and search is not focused', () => {
 
   const searchInput = wrapper.find<HTMLInputElement>('input.switcher-search-input');
   expect(searchInput.attributes('readonly')).toBeDefined();
-  expect(document.activeElement).not.toBe(searchInput.element);
 });
 
-test('Enter emits selected id; Enter empty does nothing', () => {
+test('Enter emits selected id on keyup; Enter empty does nothing', () => {
   const tabs = [
     createTab({ id: 42, title: 'Selected Tab', lastAccessed: 500 }),
     createTab({ id: 43, title: 'Other Tab', lastAccessed: 200 }),
@@ -345,16 +357,21 @@ test('Enter emits selected id; Enter empty does nothing', () => {
     props: { open: true, tabs },
   });
 
-  const ev1 = dispatchKey('Enter');
+  const ev1 = dispatchKey('Enter', { code: 'Enter' });
   expect(ev1.defaultPrevented).toBe(true);
+  expect(wrapper.emitted('activate')).toBeUndefined();
+
+  const up1 = dispatchKeyUp('Enter', { code: 'Enter' });
+  expect(up1.defaultPrevented).toBe(true);
   expect(wrapper.emitted('activate')).toBeTruthy();
   expect(wrapper.emitted('activate')?.[0]).toEqual([42]);
 
   const emptyWrapper = mount(Switcher, {
     props: { open: true, tabs: [] },
   });
-  const ev2 = dispatchKey('Enter');
+  const ev2 = dispatchKey('Enter', { code: 'Enter' });
   expect(ev2.defaultPrevented).toBe(true);
+  dispatchKeyUp('Enter', { code: 'Enter' });
   expect(emptyWrapper.emitted('activate')).toBeUndefined();
 });
 
@@ -376,14 +393,18 @@ test('/ enters and focuses search in quick mode', async () => {
   expect(document.activeElement).toBe(searchInput.element);
 });
 
-test('quick Escape emits close', () => {
+test('quick Escape queues close on keydown and emits close on keyup', () => {
   const tabs = [createTab({ id: 1, title: 'Tab 1' })];
   const wrapper = mount(Switcher, {
     props: { open: true, tabs },
   });
 
-  const ev = dispatchKey('Escape');
+  const ev = dispatchKey('Escape', { code: 'Escape' });
   expect(ev.defaultPrevented).toBe(true);
+  expect(wrapper.emitted('close')).toBeUndefined();
+
+  const up = dispatchKeyUp('Escape', { code: 'Escape' });
+  expect(up.defaultPrevented).toBe(true);
   expect(wrapper.emitted('close')).toBeTruthy();
   expect(wrapper.emitted('close')).toHaveLength(1);
 });
@@ -407,15 +428,15 @@ test('search Escape clears/leaves search/restores quick tiles without closing; s
   expect(wrapper.findAll('.tab-tile')).toHaveLength(1);
 
   // First Escape in search mode
-  const esc1 = dispatchKey('Escape');
+  const esc1 = dispatchKey('Escape', { code: 'Escape' });
   expect(esc1.defaultPrevented).toBe(true);
+  dispatchKeyUp('Escape', { code: 'Escape' });
   await nextTick();
 
-  // Mode returned to quick, input cleared & blurred, close NOT emitted
+  // Mode returned to quick, input cleared, close NOT emitted
   expect(wrapper.emitted('close')).toBeUndefined();
   expect(searchInput.element.value).toBe('');
   expect(searchInput.attributes('readonly')).toBeDefined();
-  expect(document.activeElement).not.toBe(searchInput.element);
 
   // Quick tiles restored, first selected
   const restoredTiles = wrapper.findAll('.tab-tile');
@@ -424,10 +445,103 @@ test('search Escape clears/leaves search/restores quick tiles without closing; s
   expect(restoredTiles[0]?.text()).toContain('First Tab');
 
   // Second Escape in quick mode
-  const esc2 = dispatchKey('Escape');
+  const esc2 = dispatchKey('Escape', { code: 'Escape' });
   expect(esc2.defaultPrevented).toBe(true);
+  expect(wrapper.emitted('close')).toBeUndefined();
+
+  const up2 = dispatchKeyUp('Escape', { code: 'Escape' });
+  expect(up2.defaultPrevented).toBe(true);
   expect(wrapper.emitted('close')).toBeTruthy();
   expect(wrapper.emitted('close')).toHaveLength(1);
+});
+
+test('window blur while close action is pending cancels queued close without emitting', () => {
+  const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+  dispatchKey('Escape', { code: 'Escape' });
+  expect(wrapper.emitted('close')).toBeUndefined();
+
+  window.dispatchEvent(new Event('blur'));
+  expect(wrapper.emitted('close')).toBeUndefined();
+});
+
+test('window blur while activate action is pending cancels queued activate without emitting', () => {
+  const tabs = [createTab({ id: 101, title: 'Alpha', lastAccessed: 100 })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+  dispatchKey('Enter', { code: 'Enter' });
+  expect(wrapper.emitted('activate')).toBeUndefined();
+
+  window.dispatchEvent(new Event('blur'));
+  expect(wrapper.emitted('activate')).toBeUndefined();
+});
+
+test('fallback safety timer cancels queued close after 800ms without emitting', () => {
+  vi.useFakeTimers();
+  try {
+    const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+    const wrapper = mount(Switcher, {
+      props: { open: true, tabs },
+    });
+    dispatchKey('Escape', { code: 'Escape' });
+    expect(wrapper.emitted('close')).toBeUndefined();
+
+    vi.advanceTimersByTime(800);
+    expect(wrapper.emitted('close')).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('fallback safety timer cancels queued activate after 800ms without emitting', () => {
+  vi.useFakeTimers();
+  try {
+    const tabs = [createTab({ id: 202, title: 'Beta', lastAccessed: 100 })];
+    const wrapper = mount(Switcher, {
+      props: { open: true, tabs },
+    });
+    dispatchKey('Enter', { code: 'Enter' });
+    expect(wrapper.emitted('activate')).toBeUndefined();
+
+    vi.advanceTimersByTime(800);
+    expect(wrapper.emitted('activate')).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('backdrop click immediately emits close without waiting for keyup', async () => {
+  const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+  const overlay = wrapper.find<HTMLElement>('.switcher-overlay');
+  await overlay.trigger('click');
+  expect(wrapper.emitted('close')).toHaveLength(1);
+});
+
+test('close button click immediately emits close without waiting for keyup', async () => {
+  const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+  const closeBtn = wrapper.find<HTMLButtonElement>('.switcher-close-btn');
+  await closeBtn.trigger('click');
+  expect(wrapper.emitted('close')).toHaveLength(1);
+});
+
+test('tile click immediately emits activate without waiting for keyup', async () => {
+  const tabs = [createTab({ id: 55, title: 'Tab 55' })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+  const tile = wrapper.find('.tab-tile');
+  await tile.trigger('click');
+  expect(wrapper.emitted('activate')).toHaveLength(1);
+  expect(wrapper.emitted('activate')?.[0]).toEqual([55]);
 });
 
 test('all four arrows change selected tile at desktop grid (5 columns)', async () => {
@@ -556,19 +670,33 @@ test('uppercase and lowercase mnemonic activates immediately; mnemonic miss does
   expect(hint1).not.toBeNull();
 
   if (hint0 && hint1) {
-    // Lowercase mnemonic activates tab 0
-    const ev1 = dispatchKey(hint0.toLowerCase());
+    // Lowercase mnemonic queues on keydown, activates tab 0 on keyup
+    const ev1 = dispatchKey(hint0.toLowerCase(), { code: `Key${hint0.toUpperCase()}` });
     expect(ev1.defaultPrevented).toBe(true);
+    expect(wrapper.emitted('activate')).toBeUndefined();
+
+    const up1 = dispatchKeyUp(hint0.toLowerCase(), { code: `Key${hint0.toUpperCase()}` });
+    expect(up1.defaultPrevented).toBe(true);
     expect(wrapper.emitted('activate')).toBeTruthy();
     expect(wrapper.emitted('activate')?.[0]).toEqual([101]);
 
-    // Uppercase mnemonic activates tab 1
-    const ev2 = dispatchKey(hint1.toUpperCase(), { shiftKey: true });
+    // Uppercase mnemonic queues on keydown, activates tab 1 on keyup
+    const ev2 = dispatchKey(hint1.toUpperCase(), {
+      shiftKey: true,
+      code: `Key${hint1.toUpperCase()}`,
+    });
     expect(ev2.defaultPrevented).toBe(true);
+    expect(wrapper.emitted('activate')?.[1]).toBeUndefined();
+
+    const up2 = dispatchKeyUp(hint1.toUpperCase(), {
+      shiftKey: true,
+      code: `Key${hint1.toUpperCase()}`,
+    });
+    expect(up2.defaultPrevented).toBe(true);
     expect(wrapper.emitted('activate')?.[1]).toEqual([202]);
 
     // Mnemonic miss does not activate and does not prevent default
-    const ev3 = dispatchKey('z');
+    const ev3 = dispatchKey('z', { code: 'KeyZ' });
     expect(ev3.defaultPrevented).toBe(false);
     expect(wrapper.emitted('activate')).toHaveLength(2);
   }
@@ -604,8 +732,10 @@ test('search typing filters, selection resets, arrows select another result, Ent
   const updatedTiles = wrapper.findAll('.tab-tile');
   expect(updatedTiles[1]?.classes()).toContain('tab-tile--selected');
 
-  // Enter activates second result
-  dispatchKey('Enter');
+  // Enter activates second result on keyup
+  dispatchKey('Enter', { code: 'Enter' });
+  expect(wrapper.emitted('activate')).toBeUndefined();
+  dispatchKeyUp('Enter', { code: 'Enter' });
   expect(wrapper.emitted('activate')).toBeTruthy();
   expect(wrapper.emitted('activate')?.[0]).toEqual([2]);
 });
@@ -632,8 +762,9 @@ test('empty search results arrows and Enter are safe', async () => {
   expect(evRight.defaultPrevented).toBe(true);
 
   // Enter should not emit activate
-  const evEnter = dispatchKey('Enter');
+  const evEnter = dispatchKey('Enter', { code: 'Enter' });
   expect(evEnter.defaultPrevented).toBe(true);
+  dispatchKeyUp('Enter', { code: 'Enter' });
   expect(wrapper.emitted('activate')).toBeUndefined();
 });
 
@@ -701,4 +832,129 @@ test('when open is false, keydown listener does not act', () => {
   const ev = dispatchKey('Escape');
   expect(ev.defaultPrevented).toBe(false);
   expect(wrapper.emitted('close')).toBeUndefined();
+});
+
+test('any keyup while open is default-prevented and does not reach a later page listener', () => {
+  const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+  mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  let pageListenerCalled = false;
+  const pageListener = (): void => {
+    pageListenerCalled = true;
+  };
+  window.addEventListener('keyup', pageListener);
+
+  try {
+    const ev = dispatchKeyUp('x', { code: 'KeyX' });
+    expect(ev.defaultPrevented).toBe(true);
+    expect(pageListenerCalled).toBe(false);
+  } finally {
+    window.removeEventListener('keyup', pageListener);
+  }
+});
+
+test('unmount removes keyup listener and pending state', () => {
+  const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  // Keydown while open
+  dispatchKey('Escape', { code: 'Escape' });
+
+  // Unmount component
+  wrapper.unmount();
+
+  let pageListenerCalled = false;
+  const pageListener = (): void => {
+    pageListenerCalled = true;
+  };
+  window.addEventListener('keyup', pageListener);
+
+  try {
+    const upEvent = dispatchKeyUp('Escape', { code: 'Escape' });
+    expect(upEvent.defaultPrevented).toBe(false);
+    expect(pageListenerCalled).toBe(true);
+  } finally {
+    window.removeEventListener('keyup', pageListener);
+  }
+});
+
+test('holding Escape beyond timeout cancels action without close, consumes keyup, and allows subsequent press', () => {
+  vi.useFakeTimers();
+  try {
+    const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+    const wrapper = mount(Switcher, {
+      props: { open: true, tabs },
+    });
+
+    dispatchKey('Escape', { code: 'Escape' });
+    dispatchKey('Escape', { code: 'Escape', repeat: true });
+
+    vi.advanceTimersByTime(800);
+    expect(wrapper.emitted('close')).toBeUndefined();
+
+    const upEvent = dispatchKeyUp('Escape', { code: 'Escape' });
+    expect(upEvent.defaultPrevented).toBe(true);
+    expect(wrapper.emitted('close')).toBeUndefined();
+
+    dispatchKey('Escape', { code: 'Escape' });
+    dispatchKeyUp('Escape', { code: 'Escape' });
+    expect(wrapper.emitted('close')).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('holding mnemonic beyond timeout cancels action without activate, consumes keyup, and allows subsequent press', () => {
+  vi.useFakeTimers();
+  try {
+    const tabs = [createTab({ id: 42, title: 'Alpha Tab' })];
+    const wrapper = mount(Switcher, {
+      props: { open: true, tabs },
+    });
+
+    const tile = wrapper.find('.tab-tile');
+    const hint = tile.find('.tab-tile__hint-char').text().toLowerCase();
+
+    dispatchKey(hint, { code: `Key${hint.toUpperCase()}` });
+    dispatchKey(hint, { code: `Key${hint.toUpperCase()}`, repeat: true });
+
+    vi.advanceTimersByTime(800);
+    expect(wrapper.emitted('activate')).toBeUndefined();
+
+    const upEvent = dispatchKeyUp(hint, { code: `Key${hint.toUpperCase()}` });
+    expect(upEvent.defaultPrevented).toBe(true);
+    expect(wrapper.emitted('activate')).toBeUndefined();
+
+    dispatchKey(hint, { code: `Key${hint.toUpperCase()}` });
+    dispatchKeyUp(hint, { code: `Key${hint.toUpperCase()}` });
+    expect(wrapper.emitted('activate')?.[0]).toEqual([42]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('window blur while action is pending cancels action without emission', () => {
+  vi.useFakeTimers();
+  try {
+    const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+    const wrapper = mount(Switcher, {
+      props: { open: true, tabs },
+    });
+
+    dispatchKey('Escape', { code: 'Escape' });
+    window.dispatchEvent(new Event('blur'));
+
+    vi.advanceTimersByTime(1000);
+    expect(wrapper.emitted('close')).toBeUndefined();
+
+    const upEvent = dispatchKeyUp('Escape', { code: 'Escape' });
+    expect(upEvent.defaultPrevented).toBe(true);
+    expect(wrapper.emitted('close')).toBeUndefined();
+  } finally {
+    vi.useRealTimers();
+  }
 });

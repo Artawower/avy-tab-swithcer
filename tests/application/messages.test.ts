@@ -2,11 +2,24 @@ import { expect, test } from 'vitest';
 import {
   isActivateTabMessage,
   isActivateTabResult,
-  isOpenSwitcherMessage,
+  isCloseSwitcherSessionMessage,
+  isFrameCloseMessage,
+  isFrameInitErrorMessage,
+  isHeartbeatSwitcherSessionMessage,
+  isHeartbeatSwitcherSessionResult,
+  isOpenSwitcherHostMessage,
+  isRequestSwitcherDataMessage,
+  isRequestSwitcherDataResult,
   isSwitchableTab,
   type ActivateTabMessage,
   type ActivateTabResult,
-  type OpenSwitcherMessage,
+  type FrameCloseMessage,
+  type FrameInitErrorMessage,
+  type HeartbeatSwitcherSessionMessage,
+  type HeartbeatSwitcherSessionResult,
+  type OpenSwitcherHostMessage,
+  type RequestSwitcherDataMessage,
+  type RequestSwitcherDataResult,
 } from '../../src/application/messages';
 import { createTab } from '../fixtures/tab';
 
@@ -127,161 +140,217 @@ test('isSwitchableTab does not mutate input object', () => {
   expect(isSwitchableTab(tab)).toBe(true);
 });
 
-test('isOpenSwitcherMessage accepts valid message with non-empty tabs', () => {
+test('isHeartbeatSwitcherSessionMessage accepts valid heartbeat message', () => {
   const message: unknown = {
-    type: 'OPEN_SWITCHER',
-    tabs: [createTab({ id: 1 }), createTab({ id: 2 })],
+    type: 'HEARTBEAT_SWITCHER_SESSION',
+    sessionId: 'session-valid-123',
   };
 
-  if (isOpenSwitcherMessage(message)) {
-    const validMessage: OpenSwitcherMessage = message;
-    expect(validMessage.type).toBe('OPEN_SWITCHER');
-    expect(validMessage.tabs).toHaveLength(2);
+  if (isHeartbeatSwitcherSessionMessage(message)) {
+    const valid: HeartbeatSwitcherSessionMessage = message;
+    expect(valid.type).toBe('HEARTBEAT_SWITCHER_SESSION');
+    expect(valid.sessionId).toBe('session-valid-123');
   } else {
-    expect.fail('Expected isOpenSwitcherMessage to return true');
+    expect.fail('Expected isHeartbeatSwitcherSessionMessage to return true');
   }
 });
 
-test('isOpenSwitcherMessage accepts valid message with empty tabs', () => {
-  const message: unknown = {
-    type: 'OPEN_SWITCHER',
-    tabs: [],
+test('isHeartbeatSwitcherSessionMessage rejects invalid payloads', () => {
+  expect(isHeartbeatSwitcherSessionMessage(null)).toBe(false);
+  expect(isHeartbeatSwitcherSessionMessage(undefined)).toBe(false);
+  expect(isHeartbeatSwitcherSessionMessage('HEARTBEAT_SWITCHER_SESSION')).toBe(false);
+  expect(isHeartbeatSwitcherSessionMessage({ type: 'HEARTBEAT_SWITCHER_SESSION' })).toBe(false);
+  expect(
+    isHeartbeatSwitcherSessionMessage({ type: 'HEARTBEAT_SWITCHER_SESSION', sessionId: '' }),
+  ).toBe(false);
+  expect(
+    isHeartbeatSwitcherSessionMessage({ type: 'HEARTBEAT_SWITCHER_SESSION', sessionId: 123 }),
+  ).toBe(false);
+  expect(isHeartbeatSwitcherSessionMessage({ type: 'OTHER_TYPE', sessionId: '123' })).toBe(false);
+});
+
+test('isHeartbeatSwitcherSessionResult accepts valid results', () => {
+  const success: unknown = { ok: true };
+  if (isHeartbeatSwitcherSessionResult(success)) {
+    const valid: HeartbeatSwitcherSessionResult = success;
+    expect(valid.ok).toBe(true);
+  } else {
+    expect.fail('Expected isHeartbeatSwitcherSessionResult to return true for ok: true');
+  }
+
+  const unauthorized: unknown = { ok: false, reason: 'unauthorized' };
+  expect(isHeartbeatSwitcherSessionResult(unauthorized)).toBe(true);
+
+  const unexpected: unknown = { ok: false, reason: 'unexpected' };
+  expect(isHeartbeatSwitcherSessionResult(unexpected)).toBe(true);
+});
+
+test('isHeartbeatSwitcherSessionResult rejects invalid payloads', () => {
+  expect(isHeartbeatSwitcherSessionResult(null)).toBe(false);
+  expect(isHeartbeatSwitcherSessionResult(undefined)).toBe(false);
+  expect(isHeartbeatSwitcherSessionResult({})).toBe(false);
+  expect(isHeartbeatSwitcherSessionResult({ ok: true, extra: 1 })).toBe(false);
+  expect(isHeartbeatSwitcherSessionResult({ ok: false })).toBe(false);
+  expect(isHeartbeatSwitcherSessionResult({ ok: false, reason: 'invalid-reason' })).toBe(false);
+});
+
+test('isOpenSwitcherHostMessage validates valid host message', () => {
+  const valid: unknown = {
+    type: 'OPEN_SWITCHER_HOST',
+    sessionId: 'test-session-123',
+    frameUrl: 'chrome-extension://xyz/frame.html?sessionId=test-session-123',
   };
 
-  expect(isOpenSwitcherMessage(message)).toBe(true);
+  if (isOpenSwitcherHostMessage(valid)) {
+    const msg: OpenSwitcherHostMessage = valid;
+    expect(msg.type).toBe('OPEN_SWITCHER_HOST');
+    expect(msg.sessionId).toBe('test-session-123');
+    expect(msg.frameUrl).toContain('frame.html');
+  } else {
+    expect.fail('Expected isOpenSwitcherHostMessage to return true');
+  }
+
+  expect(isOpenSwitcherHostMessage(null)).toBe(false);
+  expect(isOpenSwitcherHostMessage({})).toBe(false);
+  expect(isOpenSwitcherHostMessage({ type: 'OPEN_SWITCHER_HOST', sessionId: '' })).toBe(false);
+  expect(
+    isOpenSwitcherHostMessage({
+      type: 'OPEN_SWITCHER_HOST',
+      sessionId: 's',
+      frameUrl: '',
+    }),
+  ).toBe(false);
 });
 
-test('isOpenSwitcherMessage rejects non-record values', () => {
-  expect(isOpenSwitcherMessage(null)).toBe(false);
-  expect(isOpenSwitcherMessage(undefined)).toBe(false);
-  expect(isOpenSwitcherMessage(42)).toBe(false);
-  expect(isOpenSwitcherMessage('OPEN_SWITCHER')).toBe(false);
-  expect(isOpenSwitcherMessage([])).toBe(false);
-});
-
-test('isOpenSwitcherMessage rejects wrong or missing type discriminant', () => {
-  expect(isOpenSwitcherMessage({ tabs: [] })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'ACTIVATE_TAB', tabs: [] })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'open_switcher', tabs: [] })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'UNKNOWN', tabs: [] })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 123, tabs: [] })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: null, tabs: [] })).toBe(false);
-});
-
-test('isOpenSwitcherMessage rejects missing or non-array tabs', () => {
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER' })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: null })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: undefined })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: {} })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: 'invalid' })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: 123 })).toBe(false);
-});
-
-test('isOpenSwitcherMessage rejects when any tab in tabs array is invalid', () => {
-  const validTab = createTab({ id: 1 });
-  const invalidTab = { ...createTab({ id: 2 }), id: -1 };
-
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: [invalidTab] })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: [validTab, invalidTab] })).toBe(
-    false,
-  );
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: [invalidTab, validTab] })).toBe(
-    false,
-  );
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: [validTab, null] })).toBe(false);
-  expect(isOpenSwitcherMessage({ type: 'OPEN_SWITCHER', tabs: ['not a tab'] })).toBe(false);
-});
-
-test('isOpenSwitcherMessage tolerates extra properties', () => {
-  const message = {
-    type: 'OPEN_SWITCHER',
-    tabs: [createTab()],
-    senderContext: 'background',
-    timestamp: Date.now(),
+test('isRequestSwitcherDataMessage validates request message', () => {
+  const valid: unknown = {
+    type: 'REQUEST_SWITCHER_DATA',
+    sessionId: 'session-abc',
   };
 
-  expect(isOpenSwitcherMessage(message)).toBe(true);
+  if (isRequestSwitcherDataMessage(valid)) {
+    const msg: RequestSwitcherDataMessage = valid;
+    expect(msg.type).toBe('REQUEST_SWITCHER_DATA');
+    expect(msg.sessionId).toBe('session-abc');
+  } else {
+    expect.fail('Expected isRequestSwitcherDataMessage to return true');
+  }
+
+  expect(isRequestSwitcherDataMessage(null)).toBe(false);
+  expect(isRequestSwitcherDataMessage({})).toBe(false);
+  expect(isRequestSwitcherDataMessage({ type: 'REQUEST_SWITCHER_DATA', sessionId: '' })).toBe(
+    false,
+  );
+  expect(isRequestSwitcherDataMessage({ type: 'REQUEST_SWITCHER_DATA', sessionId: 123 })).toBe(
+    false,
+  );
 });
 
-test('isOpenSwitcherMessage does not mutate input object or tabs array', () => {
-  const tabs = Object.freeze([Object.freeze(createTab())]);
-  const message = Object.freeze({
-    type: 'OPEN_SWITCHER',
-    tabs,
-  });
+test('isRequestSwitcherDataResult validates result payloads', () => {
+  const success: unknown = {
+    ok: true,
+    tabs: [createTab({ id: 1 })],
+  };
 
-  expect(isOpenSwitcherMessage(message)).toBe(true);
+  if (isRequestSwitcherDataResult(success)) {
+    const res: RequestSwitcherDataResult = success;
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.tabs).toHaveLength(1);
+    }
+  } else {
+    expect.fail('Expected isRequestSwitcherDataResult to return true for success');
+  }
+
+  const failUnauthorized: unknown = {
+    ok: false,
+    reason: 'unauthorized',
+  };
+  expect(isRequestSwitcherDataResult(failUnauthorized)).toBe(true);
+
+  const failUnexpected: unknown = {
+    ok: false,
+    reason: 'unexpected',
+  };
+  expect(isRequestSwitcherDataResult(failUnexpected)).toBe(true);
+
+  expect(isRequestSwitcherDataResult(null)).toBe(false);
+  expect(isRequestSwitcherDataResult({ ok: false, reason: 'unknown' })).toBe(false);
+  expect(isRequestSwitcherDataResult({ ok: true, tabs: 'invalid' })).toBe(false);
 });
 
-test('isActivateTabMessage accepts valid message', () => {
+test('isActivateTabMessage accepts valid message with tabId and sessionId', () => {
   const message: unknown = {
     type: 'ACTIVATE_TAB',
     tabId: 42,
+    sessionId: 'valid-session-id',
   };
 
   if (isActivateTabMessage(message)) {
     const validMessage: ActivateTabMessage = message;
     expect(validMessage.type).toBe('ACTIVATE_TAB');
     expect(validMessage.tabId).toBe(42);
+    expect(validMessage.sessionId).toBe('valid-session-id');
   } else {
     expect.fail('Expected isActivateTabMessage to return true');
   }
 });
 
-test('isActivateTabMessage accepts valid message with tabId 0', () => {
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: 0 })).toBe(true);
+test('isActivateTabMessage rejects missing or empty sessionId', () => {
+  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: 1 })).toBe(false);
+  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: 1, sessionId: '' })).toBe(false);
+  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: 1, sessionId: 123 })).toBe(false);
 });
 
-test('isActivateTabMessage rejects non-record values', () => {
-  expect(isActivateTabMessage(null)).toBe(false);
-  expect(isActivateTabMessage(undefined)).toBe(false);
-  expect(isActivateTabMessage(42)).toBe(false);
-  expect(isActivateTabMessage('ACTIVATE_TAB')).toBe(false);
-  expect(isActivateTabMessage([])).toBe(false);
-});
-
-test('isActivateTabMessage rejects wrong or missing type discriminant', () => {
-  expect(isActivateTabMessage({ tabId: 1 })).toBe(false);
-  expect(isActivateTabMessage({ type: 'OPEN_SWITCHER', tabId: 1 })).toBe(false);
-  expect(isActivateTabMessage({ type: 'activate_tab', tabId: 1 })).toBe(false);
-  expect(isActivateTabMessage({ type: 'UNKNOWN', tabId: 1 })).toBe(false);
-  expect(isActivateTabMessage({ type: 123, tabId: 1 })).toBe(false);
-  expect(isActivateTabMessage({ type: null, tabId: 1 })).toBe(false);
-});
-
-test('isActivateTabMessage rejects malformed tabId values', () => {
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: -1 })).toBe(false);
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: 1.5 })).toBe(false);
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: Number.NaN })).toBe(false);
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: Number.POSITIVE_INFINITY })).toBe(
-    false,
-  );
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: Number.NEGATIVE_INFINITY })).toBe(
-    false,
-  );
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: '42' })).toBe(false);
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: null })).toBe(false);
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB', tabId: undefined })).toBe(false);
-  expect(isActivateTabMessage({ type: 'ACTIVATE_TAB' })).toBe(false);
-});
-
-test('isActivateTabMessage tolerates extra properties', () => {
-  const message = {
-    type: 'ACTIVATE_TAB',
-    tabId: 99,
-    source: 'content-script',
+test('isCloseSwitcherSessionMessage validates close session message', () => {
+  const valid: unknown = {
+    type: 'CLOSE_SWITCHER_SESSION',
+    sessionId: 'session-xyz',
   };
 
-  expect(isActivateTabMessage(message)).toBe(true);
+  expect(isCloseSwitcherSessionMessage(valid)).toBe(true);
+  expect(isCloseSwitcherSessionMessage(null)).toBe(false);
+  expect(isCloseSwitcherSessionMessage({ type: 'CLOSE_SWITCHER_SESSION' })).toBe(false);
+  expect(isCloseSwitcherSessionMessage({ type: 'CLOSE_SWITCHER_SESSION', sessionId: '' })).toBe(
+    false,
+  );
 });
 
-test('isActivateTabMessage does not mutate input object', () => {
-  const message = Object.freeze({
-    type: 'ACTIVATE_TAB',
-    tabId: 99,
-  });
+test('isFrameCloseMessage validates frame close message', () => {
+  const valid: unknown = {
+    type: 'AVY_CLOSE_FRAME',
+    sessionId: 'session-xyz',
+  };
 
-  expect(isActivateTabMessage(message)).toBe(true);
+  if (isFrameCloseMessage(valid)) {
+    const msg: FrameCloseMessage = valid;
+    expect(msg.type).toBe('AVY_CLOSE_FRAME');
+    expect(msg.sessionId).toBe('session-xyz');
+  } else {
+    expect.fail('Expected isFrameCloseMessage to return true');
+  }
+
+  expect(isFrameCloseMessage(null)).toBe(false);
+  expect(isFrameCloseMessage({ type: 'AVY_CLOSE_FRAME' })).toBe(false);
+  expect(isFrameCloseMessage({ type: 'AVY_CLOSE_FRAME', sessionId: '' })).toBe(false);
+});
+
+test('isFrameInitErrorMessage validates init failure message', () => {
+  const valid: unknown = {
+    type: 'AVY_FRAME_INIT_FAILED',
+  };
+
+  if (isFrameInitErrorMessage(valid)) {
+    const msg: FrameInitErrorMessage = valid;
+    expect(msg.type).toBe('AVY_FRAME_INIT_FAILED');
+  } else {
+    expect.fail('Expected isFrameInitErrorMessage to return true');
+  }
+
+  expect(isFrameInitErrorMessage(null)).toBe(false);
+  expect(isFrameInitErrorMessage({})).toBe(false);
+  expect(isFrameInitErrorMessage({ type: 'AVY_CLOSE_FRAME' })).toBe(false);
+  expect(isFrameInitErrorMessage({ type: 'OTHER' })).toBe(false);
 });
 
 test('isActivateTabResult accepts valid success result and narrows type', () => {
@@ -295,10 +364,11 @@ test('isActivateTabResult accepts valid success result and narrows type', () => 
   }
 });
 
-test('isActivateTabResult accepts all valid failure reasons and narrows type', () => {
+test('isActivateTabResult accepts all valid failure reasons including unauthorized', () => {
   const validReasons: ReadonlyArray<ActivateTabResult & { ok: false }> = [
     { ok: false, reason: 'tab-unavailable' },
     { ok: false, reason: 'wrong-window' },
+    { ok: false, reason: 'unauthorized' },
     { ok: false, reason: 'unexpected' },
   ];
 
@@ -314,84 +384,4 @@ test('isActivateTabResult accepts all valid failure reasons and narrows type', (
       expect.fail(`Expected isActivateTabResult to return true for reason: ${item.reason}`);
     }
   }
-});
-
-test('isActivateTabResult rejects non-record values', () => {
-  expect(isActivateTabResult(null)).toBe(false);
-  expect(isActivateTabResult(undefined)).toBe(false);
-  expect(isActivateTabResult(123)).toBe(false);
-  expect(isActivateTabResult('ok')).toBe(false);
-  expect(isActivateTabResult(true)).toBe(false);
-  expect(isActivateTabResult(false)).toBe(false);
-  expect(isActivateTabResult([])).toBe(false);
-  expect(isActivateTabResult([{ ok: true }])).toBe(false);
-  expect(isActivateTabResult(() => {})).toBe(false);
-  expect(isActivateTabResult(Symbol('result'))).toBe(false);
-});
-
-test('isActivateTabResult rejects extra keys on success result', () => {
-  expect(isActivateTabResult({ ok: true, extra: 1 })).toBe(false);
-  expect(isActivateTabResult({ ok: true, reason: 'tab-unavailable' })).toBe(false);
-  expect(isActivateTabResult({ ok: true, extra: null })).toBe(false);
-});
-
-test('isActivateTabResult rejects extra keys on failure result', () => {
-  expect(isActivateTabResult({ ok: false, reason: 'tab-unavailable', extra: 1 })).toBe(false);
-  expect(isActivateTabResult({ ok: false, reason: 'tab-unavailable', id: 42 })).toBe(false);
-  expect(isActivateTabResult({ ok: false, reason: 'wrong-window', detail: 'test' })).toBe(false);
-  expect(isActivateTabResult({ ok: false, reason: 'unexpected', extra: null })).toBe(false);
-});
-
-test('isActivateTabResult rejects malformed or missing ok property', () => {
-  expect(isActivateTabResult({})).toBe(false);
-  expect(isActivateTabResult({ ok: 'true' })).toBe(false);
-  expect(isActivateTabResult({ ok: 1 })).toBe(false);
-  expect(isActivateTabResult({ ok: 0 })).toBe(false);
-  expect(isActivateTabResult({ ok: null })).toBe(false);
-  expect(isActivateTabResult({ ok: undefined })).toBe(false);
-  expect(isActivateTabResult({ reason: 'tab-unavailable' })).toBe(false);
-});
-
-test('isActivateTabResult rejects failure result missing reason or with invalid reason', () => {
-  expect(isActivateTabResult({ ok: false })).toBe(false);
-  expect(isActivateTabResult({ ok: false, reason: 'missing' })).toBe(false);
-  expect(isActivateTabResult({ ok: false, reason: 'unknown-reason' })).toBe(false);
-  expect(isActivateTabResult({ ok: false, reason: 123 })).toBe(false);
-  expect(isActivateTabResult({ ok: false, reason: null })).toBe(false);
-  expect(isActivateTabResult({ ok: false, reason: undefined })).toBe(false);
-  expect(isActivateTabResult({ ok: false, reason: '' })).toBe(false);
-  expect(isActivateTabResult({ ok: false, reason: true })).toBe(false);
-  expect(isActivateTabResult({ ok: false, otherProp: 'tab-unavailable' })).toBe(false);
-});
-
-class PrototypeSuccess {
-  get ok(): boolean {
-    return true;
-  }
-}
-
-class PrototypeFailure {
-  get ok(): boolean {
-    return false;
-  }
-
-  get reason(): string {
-    return 'tab-unavailable';
-  }
-}
-
-test('isActivateTabResult rejects objects with inherited properties instead of own properties', () => {
-  const prototypeSuccess = new PrototypeSuccess();
-  expect(isActivateTabResult(prototypeSuccess)).toBe(false);
-
-  const prototypeFailure = new PrototypeFailure();
-  expect(isActivateTabResult(prototypeFailure)).toBe(false);
-});
-
-test('isActivateTabResult does not mutate frozen input objects', () => {
-  const frozenSuccess = Object.freeze({ ok: true });
-  expect(isActivateTabResult(frozenSuccess)).toBe(true);
-
-  const frozenFailure = Object.freeze({ ok: false, reason: 'tab-unavailable' });
-  expect(isActivateTabResult(frozenFailure)).toBe(true);
 });

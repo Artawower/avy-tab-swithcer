@@ -55,19 +55,71 @@ const displayedItems = computed<readonly DisplayItem[]>(() => {
   }));
 });
 
+type PendingAction =
+  | { readonly type: 'close'; readonly code: string; readonly key: string }
+  | {
+      readonly type: 'activate';
+      readonly tabId: number;
+      readonly code: string;
+      readonly key: string;
+    };
+
+let pendingAction: PendingAction | null = null;
+let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearFallbackTimer(): void {
+  if (fallbackTimer !== null) {
+    clearTimeout(fallbackTimer);
+    fallbackTimer = null;
+  }
+}
+
+function cancelPendingAction(): void {
+  clearFallbackTimer();
+  pendingAction = null;
+}
+
+function executePendingAction(): void {
+  clearFallbackTimer();
+  if (!pendingAction) {
+    return;
+  }
+  const action = pendingAction;
+  pendingAction = null;
+
+  if (action.type === 'close') {
+    emit('close');
+  } else if (action.type === 'activate') {
+    emit('activate', action.tabId);
+  }
+}
+
+function queueAction(action: PendingAction): void {
+  clearFallbackTimer();
+  pendingAction = action;
+  fallbackTimer = setTimeout(() => {
+    cancelPendingAction();
+  }, 800);
+}
+
 function resetState(): void {
+  clearFallbackTimer();
+  pendingAction = null;
   mode.value = 'quick';
   query.value = '';
-  searchInputRef.value?.blur();
   const items = getRecentTabs(props.tabs, null);
   selectedIndex.value = items.length > 0 ? 0 : -1;
+  searchInputRef.value?.blur();
 }
 
 watch(
-  () => [props.open, props.tabs],
+  () => [props.open, props.tabs] as const,
   ([isOpen]) => {
     if (isOpen) {
       resetState();
+    } else {
+      clearFallbackTimer();
+      pendingAction = null;
     }
   },
   { immediate: true },
@@ -85,9 +137,9 @@ function enterSearch(): void {
 function exitSearch(): void {
   mode.value = 'quick';
   query.value = '';
-  searchInputRef.value?.blur();
   const recent = getRecentTabs(props.tabs, null);
   selectedIndex.value = recent.length > 0 ? 0 : -1;
+  searchInputRef.value?.blur();
 }
 
 function onSearchInput(): void {
@@ -99,15 +151,6 @@ watch(query, () => {
     selectedIndex.value = displayedItems.value.length > 0 ? 0 : -1;
   }
 });
-
-function activateSelected(): void {
-  if (selectedIndex.value >= 0 && selectedIndex.value < displayedItems.value.length) {
-    const item = displayedItems.value[selectedIndex.value];
-    if (item) {
-      emit('activate', item.tab.id);
-    }
-  }
-}
 
 function getDirection(key: string): SelectionDirection | null {
   if (key === 'ArrowLeft') {
@@ -127,11 +170,20 @@ function getDirection(key: string): SelectionDirection | null {
 
 function consumeEvent(event: KeyboardEvent): void {
   event.preventDefault();
-  event.stopPropagation();
+  event.stopImmediatePropagation();
 }
 
 function onKeydown(event: KeyboardEvent): void {
-  if (!props.open || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
+  if (!props.open) {
+    return;
+  }
+
+  if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
+    return;
+  }
+
+  if (pendingAction !== null || event.repeat) {
+    consumeEvent(event);
     return;
   }
 
@@ -140,7 +192,11 @@ function onKeydown(event: KeyboardEvent): void {
     if (mode.value === 'search') {
       exitSearch();
     } else {
-      emit('close');
+      queueAction({
+        type: 'close',
+        code: event.code || 'Escape',
+        key: event.key,
+      });
     }
     return;
   }
@@ -153,7 +209,17 @@ function onKeydown(event: KeyboardEvent): void {
 
   if (event.key === 'Enter') {
     consumeEvent(event);
-    activateSelected();
+    if (selectedIndex.value >= 0 && selectedIndex.value < displayedItems.value.length) {
+      const item = displayedItems.value[selectedIndex.value];
+      if (item) {
+        queueAction({
+          type: 'activate',
+          tabId: item.tab.id,
+          code: event.code || 'Enter',
+          key: event.key,
+        });
+      }
+    }
     return;
   }
 
@@ -176,30 +242,75 @@ function onKeydown(event: KeyboardEvent): void {
     );
     if (matched) {
       consumeEvent(event);
-      emit('activate', matched.tab.id);
+      queueAction({
+        type: 'activate',
+        tabId: matched.tab.id,
+        code: event.code || `Key${keyLower.toUpperCase()}`,
+        key: event.key,
+      });
     }
   }
 }
 
+function onKeyup(event: KeyboardEvent): void {
+  if (!props.open) {
+    return;
+  }
+
+  if (pendingAction !== null) {
+    const matchesCode = Boolean(event.code && event.code === pendingAction.code);
+    const matchesKey = event.key.toLowerCase() === pendingAction.key.toLowerCase();
+    if (matchesCode || matchesKey) {
+      consumeEvent(event);
+      executePendingAction();
+      return;
+    }
+  }
+
+  consumeEvent(event);
+}
+
+function onWindowBlur(): void {
+  cancelPendingAction();
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onKeydown, true);
+  window.addEventListener('keyup', onKeyup, true);
+  window.addEventListener('blur', onWindowBlur);
 });
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown, true);
+  window.removeEventListener('keyup', onKeyup, true);
+  window.removeEventListener('blur', onWindowBlur);
+  clearFallbackTimer();
+  pendingAction = null;
 });
 
 function onCloseClick(): void {
+  clearFallbackTimer();
+  pendingAction = null;
   emit('close');
 }
 
 function onTileActivate(tabId: number): void {
+  clearFallbackTimer();
+  pendingAction = null;
   emit('activate', tabId);
+}
+
+function onBackdropClick(event: MouseEvent): void {
+  if (event.target === event.currentTarget) {
+    clearFallbackTimer();
+    pendingAction = null;
+    emit('close');
+  }
 }
 </script>
 
 <template>
-  <div v-if="open" class="switcher-overlay">
+  <div v-if="open" class="switcher-overlay" @click="onBackdropClick">
     <div class="switcher-top-row">
       <div class="switcher-search-surface" @click="enterSearch">
         <svg
