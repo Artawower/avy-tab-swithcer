@@ -43,29 +43,36 @@ test('searchTabs ranks substring over subsequence match', () => {
   expect(result.map((t) => t.id)).toEqual([2, 1]);
 });
 
-test('searchTabs resolves equal-quality matches by field priority (title > hostname > URL)', () => {
-  const tabUrl = createTab({
-    id: 1,
-    title: 'Gamma Page',
-    hostname: 'gamma.org',
-    url: 'https://gamma.org/xneedle',
-  });
+test('searchTabs resolves equal-quality matches by field priority (title > hostname)', () => {
   const tabHostname = createTab({
-    id: 2,
+    id: 1,
     title: 'Beta Page',
     hostname: 'xneedle.test',
     url: 'https://xneedle.test',
   });
   const tabTitle = createTab({
-    id: 3,
+    id: 2,
     title: 'xneedle',
     hostname: 'alpha.org',
     url: 'https://alpha.org/page',
   });
 
-  const result = searchTabs([tabUrl, tabHostname, tabTitle], 'needle');
+  const result = searchTabs([tabHostname, tabTitle], 'needle');
 
-  expect(result.map((t) => t.id)).toEqual([3, 2, 1]);
+  expect(result.map((t) => t.id)).toEqual([2, 1]);
+});
+
+test('searchTabs ignores query terms that appear only in URL path or query string', () => {
+  const tabWithPath = createTab({
+    id: 1,
+    title: 'Example Page',
+    hostname: 'example.com',
+    url: 'https://example.com/deep/path/target-token?query=target-token',
+  });
+
+  const result = searchTabs([tabWithPath], 'target-token');
+
+  expect(result).toEqual([]);
 });
 
 test('searchTabs ranks stronger lower-priority-field quality over weaker title quality', () => {

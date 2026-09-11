@@ -13,7 +13,6 @@ const enum MatchQuality {
 const enum FieldPriority {
   Title = 0,
   Hostname = 1,
-  Url = 2,
 }
 
 interface BestMatch {
@@ -69,7 +68,6 @@ function getBestMatch(tab: SwitchableTab, query: string): BestMatch | null {
   const fields = [
     { text: tab.title.trim().toLowerCase(), priority: FieldPriority.Title },
     { text: tab.hostname.trim().toLowerCase(), priority: FieldPriority.Hostname },
-    { text: tab.url.trim().toLowerCase(), priority: FieldPriority.Url },
   ];
 
   let best: BestMatch | null = null;
@@ -79,7 +77,7 @@ function getBestMatch(tab: SwitchableTab, query: string): BestMatch | null {
     if (quality === MatchQuality.NoMatch) {
       continue;
     }
-    // Fields are checked in Title > Hostname > URL order; earlier fields win ties
+    // Fields are checked in Title > Hostname order; earlier fields win ties
     if (best === null || quality < best.quality) {
       best = { quality, fieldPriority: priority };
     }
