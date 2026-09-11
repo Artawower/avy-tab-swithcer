@@ -1,6 +1,6 @@
 import { createApp, defineComponent, h, ref } from 'vue';
 import { browser } from 'wxt/browser';
-import { isOpenSwitcherMessage } from '../src/application/messages';
+import { isActivateTabResult, isOpenSwitcherMessage } from '../src/application/messages';
 import type { SwitchableTab } from '../src/domain/tab';
 import Switcher from '../src/ui/Switcher.vue';
 import { createSwitcherHost } from '../src/ui/switcher-host';
@@ -33,13 +33,24 @@ export default defineUnlistedScript(() => {
           },
           onActivate: (tabId: number) => {
             open.value = false;
+            const recover = (): void => {
+              tabs.value = tabs.value.filter((tab) => tab.id !== tabId);
+              open.value = true;
+            };
+
             browser.runtime
               .sendMessage({
                 type: 'ACTIVATE_TAB',
                 tabId,
               })
+              .then((response: unknown) => {
+                if (!isActivateTabResult(response) || !response.ok) {
+                  recover();
+                }
+              })
               .catch((err: unknown) => {
-                console.error('[Avy] Activation error:', err);
+                console.error('[Avy] Unexpected error activating tab:', err);
+                recover();
               });
           },
         });

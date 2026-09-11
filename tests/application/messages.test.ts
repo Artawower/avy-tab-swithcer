@@ -1,9 +1,11 @@
 import { expect, test } from 'vitest';
 import {
   isActivateTabMessage,
+  isActivateTabResult,
   isOpenSwitcherMessage,
   isSwitchableTab,
   type ActivateTabMessage,
+  type ActivateTabResult,
   type OpenSwitcherMessage,
 } from '../../src/application/messages';
 import { createTab } from '../fixtures/tab';
@@ -280,4 +282,116 @@ test('isActivateTabMessage does not mutate input object', () => {
   });
 
   expect(isActivateTabMessage(message)).toBe(true);
+});
+
+test('isActivateTabResult accepts valid success result and narrows type', () => {
+  const payload: unknown = { ok: true };
+
+  if (isActivateTabResult(payload)) {
+    const validResult: ActivateTabResult = payload;
+    expect(validResult.ok).toBe(true);
+  } else {
+    expect.fail('Expected isActivateTabResult to return true for { ok: true }');
+  }
+});
+
+test('isActivateTabResult accepts all valid failure reasons and narrows type', () => {
+  const validReasons: ReadonlyArray<ActivateTabResult & { ok: false }> = [
+    { ok: false, reason: 'tab-unavailable' },
+    { ok: false, reason: 'wrong-window' },
+    { ok: false, reason: 'unexpected' },
+  ];
+
+  for (const item of validReasons) {
+    const payload: unknown = item;
+    if (isActivateTabResult(payload)) {
+      const validResult: ActivateTabResult = payload;
+      expect(validResult.ok).toBe(false);
+      if (!validResult.ok) {
+        expect(validResult.reason).toBe(item.reason);
+      }
+    } else {
+      expect.fail(`Expected isActivateTabResult to return true for reason: ${item.reason}`);
+    }
+  }
+});
+
+test('isActivateTabResult rejects non-record values', () => {
+  expect(isActivateTabResult(null)).toBe(false);
+  expect(isActivateTabResult(undefined)).toBe(false);
+  expect(isActivateTabResult(123)).toBe(false);
+  expect(isActivateTabResult('ok')).toBe(false);
+  expect(isActivateTabResult(true)).toBe(false);
+  expect(isActivateTabResult(false)).toBe(false);
+  expect(isActivateTabResult([])).toBe(false);
+  expect(isActivateTabResult([{ ok: true }])).toBe(false);
+  expect(isActivateTabResult(() => {})).toBe(false);
+  expect(isActivateTabResult(Symbol('result'))).toBe(false);
+});
+
+test('isActivateTabResult rejects extra keys on success result', () => {
+  expect(isActivateTabResult({ ok: true, extra: 1 })).toBe(false);
+  expect(isActivateTabResult({ ok: true, reason: 'tab-unavailable' })).toBe(false);
+  expect(isActivateTabResult({ ok: true, extra: null })).toBe(false);
+});
+
+test('isActivateTabResult rejects extra keys on failure result', () => {
+  expect(isActivateTabResult({ ok: false, reason: 'tab-unavailable', extra: 1 })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: 'tab-unavailable', id: 42 })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: 'wrong-window', detail: 'test' })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: 'unexpected', extra: null })).toBe(false);
+});
+
+test('isActivateTabResult rejects malformed or missing ok property', () => {
+  expect(isActivateTabResult({})).toBe(false);
+  expect(isActivateTabResult({ ok: 'true' })).toBe(false);
+  expect(isActivateTabResult({ ok: 1 })).toBe(false);
+  expect(isActivateTabResult({ ok: 0 })).toBe(false);
+  expect(isActivateTabResult({ ok: null })).toBe(false);
+  expect(isActivateTabResult({ ok: undefined })).toBe(false);
+  expect(isActivateTabResult({ reason: 'tab-unavailable' })).toBe(false);
+});
+
+test('isActivateTabResult rejects failure result missing reason or with invalid reason', () => {
+  expect(isActivateTabResult({ ok: false })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: 'missing' })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: 'unknown-reason' })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: 123 })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: null })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: undefined })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: '' })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: true })).toBe(false);
+  expect(isActivateTabResult({ ok: false, otherProp: 'tab-unavailable' })).toBe(false);
+});
+
+class PrototypeSuccess {
+  get ok(): boolean {
+    return true;
+  }
+}
+
+class PrototypeFailure {
+  get ok(): boolean {
+    return false;
+  }
+
+  get reason(): string {
+    return 'tab-unavailable';
+  }
+}
+
+test('isActivateTabResult rejects objects with inherited properties instead of own properties', () => {
+  const prototypeSuccess = new PrototypeSuccess();
+  expect(isActivateTabResult(prototypeSuccess)).toBe(false);
+
+  const prototypeFailure = new PrototypeFailure();
+  expect(isActivateTabResult(prototypeFailure)).toBe(false);
+});
+
+test('isActivateTabResult does not mutate frozen input objects', () => {
+  const frozenSuccess = Object.freeze({ ok: true });
+  expect(isActivateTabResult(frozenSuccess)).toBe(true);
+
+  const frozenFailure = Object.freeze({ ok: false, reason: 'tab-unavailable' });
+  expect(isActivateTabResult(frozenFailure)).toBe(true);
 });

@@ -85,3 +85,28 @@ export function isActivateTabMessage(value: unknown): value is ActivateTabMessag
 
   return isNonNegativeInteger(value['tabId']);
 }
+
+export function isActivateTabResult(value: unknown): value is ActivateTabResult {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const keys = Object.keys(value);
+
+  if (value['ok'] === true) {
+    return keys.length === 1 && keys[0] === 'ok';
+  }
+
+  if (value['ok'] === false) {
+    if (keys.length !== 2) {
+      return false;
+    }
+    if (!keys.includes('ok') || !keys.includes('reason')) {
+      return false;
+    }
+    const reason = value['reason'];
+    return reason === 'tab-unavailable' || reason === 'wrong-window' || reason === 'unexpected';
+  }
+
+  return false;
+}
