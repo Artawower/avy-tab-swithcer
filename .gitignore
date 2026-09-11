@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# WXT outputs & cache
+.wxt/
+.output/
+
+# Testing & coverage
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# Local browser profiles & cache
+.cache/
+.playwright-profile/
+user-data-dir/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor junk
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
