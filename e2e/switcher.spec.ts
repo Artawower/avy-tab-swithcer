@@ -85,36 +85,43 @@ test('Search and close flow: searches beyond top 10 MRU, Enter activates, and cl
   await needlePage.bringToFront();
   await needlePage.waitForTimeout(100);
 
-  // Create 11 more tabs (Tab 1 to Tab 11) and activate them in order
+  // Create 13 more tabs (Tab 1 to Tab 13) and activate them in order
   const otherPages = [];
-  for (let i = 1; i <= 11; i++) {
+  for (let i = 1; i <= 13; i++) {
     const page = await context.newPage();
     await page.goto(`http://localhost:3456/?title=Recent%20Tab%20${i}`);
     otherPages.push(page);
     await page.bringToFront();
-    await page.waitForTimeout(80);
+    await page.waitForTimeout(60);
   }
 
-  // Currently on Recent Tab 11.
-  // The quick switcher only holds MAX_QUICK_TABS (10), so Recent Tab 10 down to Recent Tab 1 fill it.
-  // "Unique Needle Candidate" is outside the quick top 10.
+  // Currently on Recent Tab 13.
+  // The quick switcher only holds MAX_QUICK_TABS (10), so Recent Tab 12 down to Recent Tab 3 fill it.
+  // "Unique Needle Candidate" and older tabs (Recent Tab 1 and 2) are outside the quick top 10.
   const activePage = otherPages[otherPages.length - 1];
   if (!activePage) {
     throw new Error('Expected active page to exist');
   }
 
-  expect(await getActiveTabTitle()).toBe('Recent Tab 11');
+  expect(await getActiveTabTitle()).toBe('Recent Tab 13');
 
   // Open switcher
   await openSwitcher(activePage);
 
-  // Confirm Unique Needle Candidate is not in the quick 10
+  // Confirm quick mode caps at 10 and Unique Needle Candidate is not in the quick 10
   const initialTitles = await activePage.locator('.tab-tile__title').allTextContents();
   expect(initialTitles).not.toContain('Unique Needle Candidate');
   expect(initialTitles).toHaveLength(10);
 
   // Click search surface
   await activePage.locator('.switcher-search-surface').click();
+
+  // Search common term matching >10 candidates (12 candidates excluding active Recent Tab 13)
+  await activePage.locator('.switcher-search-input').fill('Recent');
+
+  // Assert search mode renders all matching tabs (>10)
+  const commonResults = activePage.locator('.tab-tile');
+  await expect(commonResults).toHaveCount(12);
 
   // Fill unique title fragment
   await activePage.locator('.switcher-search-input').fill('Needle');

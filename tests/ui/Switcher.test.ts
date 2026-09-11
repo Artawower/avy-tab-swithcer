@@ -144,6 +144,65 @@ test('Switcher finds a tab outside quick 10 in search mode and uses same tile gr
   expect(tiles[0]?.find('mark.tab-tile__hint-char').exists()).toBe(false);
 });
 
+test('search mode renders all matches when >10 and returns to 10 unhinted tiles when cleared', async () => {
+  const tabs = [];
+  for (let i = 1; i <= 15; i++) {
+    tabs.push(createTab({ id: i, title: `Tab ${i}`, lastAccessed: 1000 + i }));
+  }
+
+  const wrapper = mount(Switcher, {
+    props: {
+      open: true,
+      tabs,
+    },
+  });
+
+  // 1. Quick mode is capped at 10 and has hints
+  let tiles = wrapper.findAll('.tab-tile');
+  expect(tiles).toHaveLength(10);
+  const quickHints = tiles.map((t) =>
+    t.find('.tab-tile__hint-badge, mark.tab-tile__hint-char').exists(),
+  );
+  expect(quickHints.some((hasHint) => hasHint)).toBe(true);
+
+  // 2. Enter search mode and type non-empty search matching all 15 tabs
+  await wrapper.find('.switcher-search-surface').trigger('click');
+  const searchInput = wrapper.find<HTMLInputElement>('input.switcher-search-input');
+  await searchInput.setValue('Tab');
+
+  // Search mode renders ALL matches (>10)
+  tiles = wrapper.findAll('.tab-tile');
+  expect(tiles).toHaveLength(15);
+  for (const tile of tiles) {
+    expect(tile.find('.tab-tile__hint-badge').exists()).toBe(false);
+    expect(tile.find('mark.tab-tile__hint-char').exists()).toBe(false);
+  }
+
+  // 3. Clear search query (empty string)
+  await searchInput.setValue('');
+
+  // Remains in search mode (input is still editable, not readonly)
+  expect(searchInput.attributes('readonly')).toBeUndefined();
+
+  // Shows top 10 MRU tabs without hints
+  tiles = wrapper.findAll('.tab-tile');
+  expect(tiles).toHaveLength(10);
+  expect(tiles[0]?.text()).toContain('Tab 15');
+  for (const tile of tiles) {
+    expect(tile.find('.tab-tile__hint-badge').exists()).toBe(false);
+    expect(tile.find('mark.tab-tile__hint-char').exists()).toBe(false);
+  }
+
+  // Whitespace-only query also preserves search mode with top 10 MRU and no hints
+  await searchInput.setValue('   ');
+  tiles = wrapper.findAll('.tab-tile');
+  expect(tiles).toHaveLength(10);
+  for (const tile of tiles) {
+    expect(tile.find('.tab-tile__hint-badge').exists()).toBe(false);
+    expect(tile.find('mark.tab-tile__hint-char').exists()).toBe(false);
+  }
+});
+
 test('Switcher shows query no-result empty state during search', async () => {
   const tabs = [createTab({ id: 1, title: 'Alpha' })];
   const wrapper = mount(Switcher, {

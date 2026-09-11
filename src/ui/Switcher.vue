@@ -6,7 +6,7 @@ import {
   type SelectionDirection,
 } from '../application/selection';
 import { allocateTabHints } from '../domain/hint-allocator';
-import type { SwitchableTab } from '../domain/tab';
+import { MAX_QUICK_TABS, type SwitchableTab } from '../domain/tab';
 import { getRecentTabs } from '../domain/tab-order';
 import { searchTabs } from '../domain/tab-search';
 import TabTile from './TabTile.vue';
@@ -45,7 +45,9 @@ const displayedItems = computed<readonly DisplayItem[]>(() => {
     }));
   }
 
-  const searchResults = searchTabs(props.tabs, query.value);
+  const isFilteredSearch = query.value.trim().length > 0;
+  const limit = isFilteredSearch ? props.tabs.length : MAX_QUICK_TABS;
+  const searchResults = searchTabs(props.tabs, query.value, limit);
   return searchResults.map((tab) => ({
     tab,
     hint: null,
