@@ -1,8 +1,25 @@
-import { mount } from '@vue/test-utils';
-import { expect, test } from 'vitest';
+import { enableAutoUnmount, mount } from '@vue/test-utils';
+import { afterEach, expect, test } from 'vitest';
+import { nextTick } from 'vue';
 import Switcher from '../../src/ui/Switcher.vue';
 import TabTile from '../../src/ui/TabTile.vue';
 import { createTab } from '../fixtures/tab';
+
+enableAutoUnmount(afterEach);
+
+function dispatchKey(
+  key: string,
+  options?: Partial<KeyboardEventInit>,
+): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', {
+    key,
+    bubbles: true,
+    cancelable: true,
+    ...options,
+  });
+  window.dispatchEvent(event);
+  return event;
+}
 
 test('Switcher renders nothing when open is false', () => {
   const tabs = [createTab({ id: 1, title: 'Tab 1' })];
@@ -92,13 +109,10 @@ test('Switcher enters search mode and focuses input on click', async () => {
 
   expect(searchInput.attributes('readonly')).toBeUndefined();
   expect(document.activeElement).toBe(searchInput.element);
-
-  wrapper.unmount();
 });
 
 test('Switcher finds a tab outside quick 10 in search mode and uses same tile grid', async () => {
   const tabs = [];
-  // Tab 1 to 10 have high recency, Tab 11 has low recency with unique title
   for (let i = 1; i <= 10; i++) {
     tabs.push(createTab({ id: i, title: `Recent Tab ${i}`, lastAccessed: 1000 + i }));
   }
@@ -111,21 +125,18 @@ test('Switcher finds a tab outside quick 10 in search mode and uses same tile gr
     },
   });
 
-  // In quick mode, Tab 11 is not among the top 10
   let tiles = wrapper.findAllComponents(TabTile);
   expect(tiles.map((t) => t.props('tab').id)).not.toContain(11);
 
-  // Enter search mode by clicking search surface and inputting query
   await wrapper.find('.switcher-search-surface').trigger('click');
   const searchInput = wrapper.find('input.switcher-search-input');
   await searchInput.setValue('needle');
 
-  // Search finds Tab 11
   tiles = wrapper.findAllComponents(TabTile);
   expect(tiles).toHaveLength(1);
   expect(tiles[0]?.props('tab').id).toBe(11);
   expect(tiles[0]?.props('selected')).toBe(true);
-  expect(tiles[0]?.props('hint')).toBeNull(); // Search tiles pass null hint
+  expect(tiles[0]?.props('hint')).toBeNull();
 });
 
 test('Switcher shows query no-result empty state during search', async () => {
@@ -207,15 +218,11 @@ test('Switcher resets to quick mode, empty query, and initial selection on reope
     },
   });
 
-  // Enter search
   await wrapper.find('.switcher-search-surface').trigger('click');
   await wrapper.find('input.switcher-search-input').setValue('Tab 2');
   expect(wrapper.findAllComponents(TabTile)).toHaveLength(1);
 
-  // Close
   await wrapper.setProps({ open: false });
-
-  // Re-open
   await wrapper.setProps({ open: true });
 
   const input = wrapper.find<HTMLInputElement>('input.switcher-search-input');
@@ -244,4 +251,384 @@ test('Switcher resets state when tabs prop changes while open', async () => {
   const input = wrapper.find<HTMLInputElement>('input.switcher-search-input');
   expect(input.element.value).toBe('');
   expect(input.attributes('readonly')).toBeDefined();
+});
+
+// Keyboard navigation tests
+
+test('quick initially selects previous MRU and search is not focused', () => {
+  const tabs = [
+    createTab({ id: 10, title: 'Previous MRU Tab', lastAccessed: 500 }),
+    createTab({ id: 20, title: 'Older Tab', lastAccessed: 200 }),
+  ];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+    attachTo: document.body,
+  });
+
+  const tiles = wrapper.findAllComponents(TabTile);
+  expect(tiles[0]?.props('selected')).toBe(true);
+  expect(tiles[0]?.props('tab').id).toBe(10);
+  expect(tiles[1]?.props('selected')).toBe(false);
+
+  const searchInput = wrapper.find<HTMLInputElement>('input.switcher-search-input');
+  expect(searchInput.attributes('readonly')).toBeDefined();
+  expect(document.activeElement).not.toBe(searchInput.element);
+});
+
+test('Enter emits selected id; Enter empty does nothing', () => {
+  const tabs = [
+    createTab({ id: 42, title: 'Selected Tab', lastAccessed: 500 }),
+    createTab({ id: 43, title: 'Other Tab', lastAccessed: 200 }),
+  ];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  const ev1 = dispatchKey('Enter');
+  expect(ev1.defaultPrevented).toBe(true);
+  expect(wrapper.emitted('activate')).toBeTruthy();
+  expect(wrapper.emitted('activate')?.[0]).toEqual([42]);
+
+  const emptyWrapper = mount(Switcher, {
+    props: { open: true, tabs: [] },
+  });
+  const ev2 = dispatchKey('Enter');
+  expect(ev2.defaultPrevented).toBe(true);
+  expect(emptyWrapper.emitted('activate')).toBeUndefined();
+});
+
+test('/ enters and focuses search in quick mode', async () => {
+  const tabs = [createTab({ id: 1, title: 'Docs Tab' })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+    attachTo: document.body,
+  });
+
+  const searchInput = wrapper.find<HTMLInputElement>('input.switcher-search-input');
+  expect(searchInput.attributes('readonly')).toBeDefined();
+
+  const ev = dispatchKey('/');
+  expect(ev.defaultPrevented).toBe(true);
+
+  await nextTick();
+  expect(searchInput.attributes('readonly')).toBeUndefined();
+  expect(document.activeElement).toBe(searchInput.element);
+});
+
+test('quick Escape emits close', () => {
+  const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  const ev = dispatchKey('Escape');
+  expect(ev.defaultPrevented).toBe(true);
+  expect(wrapper.emitted('close')).toBeTruthy();
+  expect(wrapper.emitted('close')).toHaveLength(1);
+});
+
+test('search Escape clears/leaves search/restores quick tiles without closing; second Escape closes', async () => {
+  const tabs = [
+    createTab({ id: 1, title: 'First Tab', lastAccessed: 200 }),
+    createTab({ id: 2, title: 'Second Tab', lastAccessed: 100 }),
+  ];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+    attachTo: document.body,
+  });
+
+  // Enter search mode via /
+  dispatchKey('/');
+  await nextTick();
+
+  const searchInput = wrapper.find<HTMLInputElement>('input.switcher-search-input');
+  await searchInput.setValue('Second');
+  expect(wrapper.findAllComponents(TabTile)).toHaveLength(1);
+
+  // First Escape in search mode
+  const esc1 = dispatchKey('Escape');
+  expect(esc1.defaultPrevented).toBe(true);
+  await nextTick();
+
+  // Mode returned to quick, input cleared & blurred, close NOT emitted
+  expect(wrapper.emitted('close')).toBeUndefined();
+  expect(searchInput.element.value).toBe('');
+  expect(searchInput.attributes('readonly')).toBeDefined();
+  expect(document.activeElement).not.toBe(searchInput.element);
+
+  // Quick tiles restored, first selected
+  const restoredTiles = wrapper.findAllComponents(TabTile);
+  expect(restoredTiles).toHaveLength(2);
+  expect(restoredTiles[0]?.props('selected')).toBe(true);
+  expect(restoredTiles[0]?.props('tab').id).toBe(1);
+
+  // Second Escape in quick mode
+  const esc2 = dispatchKey('Escape');
+  expect(esc2.defaultPrevented).toBe(true);
+  expect(wrapper.emitted('close')).toBeTruthy();
+  expect(wrapper.emitted('close')).toHaveLength(1);
+});
+
+test('all four arrows change selected tile at desktop grid (5 columns)', async () => {
+  window.innerWidth = 1024;
+  const tabs = [];
+  for (let i = 1; i <= 10; i++) {
+    tabs.push(createTab({ id: i, title: `Tab ${i}`, lastAccessed: 1000 - i }));
+  }
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  const getSelectedIndex = async (): Promise<number> => {
+    await nextTick();
+    const tiles = wrapper.findAllComponents(TabTile);
+    return tiles.findIndex((t) => t.props('selected'));
+  };
+
+  expect(await getSelectedIndex()).toBe(0);
+
+  // Move right across row 0
+  dispatchKey('ArrowRight');
+  expect(await getSelectedIndex()).toBe(1);
+  dispatchKey('ArrowRight');
+  expect(await getSelectedIndex()).toBe(2);
+  dispatchKey('ArrowRight');
+  expect(await getSelectedIndex()).toBe(3);
+  dispatchKey('ArrowRight');
+  expect(await getSelectedIndex()).toBe(4);
+
+  // Clamps right at row edge (does not wrap to 5)
+  dispatchKey('ArrowRight');
+  expect(await getSelectedIndex()).toBe(4);
+
+  // Move down to row 1 (index 4 + 5 = 9)
+  dispatchKey('ArrowDown');
+  expect(await getSelectedIndex()).toBe(9);
+
+  // Clamps down at bottom row
+  dispatchKey('ArrowDown');
+  expect(await getSelectedIndex()).toBe(9);
+
+  // Move left on row 1
+  dispatchKey('ArrowLeft');
+  expect(await getSelectedIndex()).toBe(8);
+
+  // Move up to row 0 (index 8 - 5 = 3)
+  dispatchKey('ArrowUp');
+  expect(await getSelectedIndex()).toBe(3);
+
+  // Clamps up at top row
+  dispatchKey('ArrowUp');
+  expect(await getSelectedIndex()).toBe(3);
+
+  // Move left back to 0
+  dispatchKey('ArrowLeft');
+  dispatchKey('ArrowLeft');
+  dispatchKey('ArrowLeft');
+  expect(await getSelectedIndex()).toBe(0);
+
+  // Clamps left at left edge
+  dispatchKey('ArrowLeft');
+  expect(await getSelectedIndex()).toBe(0);
+});
+
+test('arrows change selected tile at responsive grid (width <= 480 => 2 columns)', async () => {
+  window.innerWidth = 400;
+  const tabs = [
+    createTab({ id: 1, title: 'Tab 1', lastAccessed: 400 }),
+    createTab({ id: 2, title: 'Tab 2', lastAccessed: 300 }),
+    createTab({ id: 3, title: 'Tab 3', lastAccessed: 200 }),
+    createTab({ id: 4, title: 'Tab 4', lastAccessed: 100 }),
+  ];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  const getSelectedIndex = async (): Promise<number> => {
+    await nextTick();
+    const tiles = wrapper.findAllComponents(TabTile);
+    return tiles.findIndex((t) => t.props('selected'));
+  };
+
+  expect(await getSelectedIndex()).toBe(0);
+
+  // Move right to col 1 (index 1)
+  dispatchKey('ArrowRight');
+  expect(await getSelectedIndex()).toBe(1);
+
+  // Clamps right at 2-column boundary
+  dispatchKey('ArrowRight');
+  expect(await getSelectedIndex()).toBe(1);
+
+  // Move down by 2 columns (index 1 + 2 = 3)
+  dispatchKey('ArrowDown');
+  expect(await getSelectedIndex()).toBe(3);
+
+  // Move left to col 0 (index 2)
+  dispatchKey('ArrowLeft');
+  expect(await getSelectedIndex()).toBe(2);
+});
+
+test('uppercase and lowercase mnemonic activates immediately; mnemonic miss does nothing', () => {
+  const tabs = [
+    createTab({ id: 101, title: 'GitHub', lastAccessed: 200 }),
+    createTab({ id: 202, title: 'Google', lastAccessed: 100 }),
+  ];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  const tiles = wrapper.findAllComponents(TabTile);
+  const hint0 = tiles[0]?.props('hint');
+  const hint1 = tiles[1]?.props('hint');
+
+  expect(hint0).not.toBeNull();
+  expect(hint1).not.toBeNull();
+
+  if (hint0 && hint1) {
+    // Lowercase mnemonic activates tab 0
+    const ev1 = dispatchKey(hint0.toLowerCase());
+    expect(ev1.defaultPrevented).toBe(true);
+    expect(wrapper.emitted('activate')).toBeTruthy();
+    expect(wrapper.emitted('activate')?.[0]).toEqual([101]);
+
+    // Uppercase mnemonic activates tab 1
+    const ev2 = dispatchKey(hint1.toUpperCase(), { shiftKey: true });
+    expect(ev2.defaultPrevented).toBe(true);
+    expect(wrapper.emitted('activate')?.[1]).toEqual([202]);
+
+    // Mnemonic miss does not activate and does not prevent default
+    const ev3 = dispatchKey('z');
+    expect(ev3.defaultPrevented).toBe(false);
+    expect(wrapper.emitted('activate')).toHaveLength(2);
+  }
+});
+
+test('search typing filters, selection resets, arrows select another result, Enter emits that result', async () => {
+  window.innerWidth = 1024;
+  const tabs = [
+    createTab({ id: 1, title: 'Alpha First', lastAccessed: 300 }),
+    createTab({ id: 2, title: 'Alpha Second', lastAccessed: 200 }),
+    createTab({ id: 3, title: 'Beta Third', lastAccessed: 100 }),
+  ];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  // Enter search
+  dispatchKey('/');
+  await nextTick();
+
+  // Type filter query
+  const searchInput = wrapper.find<HTMLInputElement>('input.switcher-search-input');
+  await searchInput.setValue('Alpha');
+
+  const filteredTiles = wrapper.findAllComponents(TabTile);
+  expect(filteredTiles).toHaveLength(2);
+  expect(filteredTiles[0]?.props('selected')).toBe(true);
+  expect(filteredTiles[0]?.props('tab').id).toBe(1);
+
+  // Arrow right selects second result in the same row
+  dispatchKey('ArrowRight');
+  await nextTick();
+  const updatedTiles = wrapper.findAllComponents(TabTile);
+  expect(updatedTiles[1]?.props('selected')).toBe(true);
+
+  // Enter activates second result
+  dispatchKey('Enter');
+  expect(wrapper.emitted('activate')).toBeTruthy();
+  expect(wrapper.emitted('activate')?.[0]).toEqual([2]);
+});
+
+test('empty search results arrows and Enter are safe', async () => {
+  const tabs = [createTab({ id: 1, title: 'Existing Tab' })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  dispatchKey('/');
+  await nextTick();
+
+  const searchInput = wrapper.find<HTMLInputElement>('input.switcher-search-input');
+  await searchInput.setValue('nomatchxyz');
+
+  expect(wrapper.findAllComponents(TabTile)).toHaveLength(0);
+
+  // Arrows should not crash or change selection
+  const evDown = dispatchKey('ArrowDown');
+  expect(evDown.defaultPrevented).toBe(true);
+
+  const evRight = dispatchKey('ArrowRight');
+  expect(evRight.defaultPrevented).toBe(true);
+
+  // Enter should not emit activate
+  const evEnter = dispatchKey('Enter');
+  expect(evEnter.defaultPrevented).toBe(true);
+  expect(wrapper.emitted('activate')).toBeUndefined();
+});
+
+test('modified and composing keys are ignored', () => {
+  const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  const ctrlEnter = dispatchKey('Enter', { ctrlKey: true });
+  expect(ctrlEnter.defaultPrevented).toBe(false);
+  expect(wrapper.emitted('activate')).toBeUndefined();
+
+  const metaEsc = dispatchKey('Escape', { metaKey: true });
+  expect(metaEsc.defaultPrevented).toBe(false);
+  expect(wrapper.emitted('close')).toBeUndefined();
+
+  const altDown = dispatchKey('ArrowDown', { altKey: true });
+  expect(altDown.defaultPrevented).toBe(false);
+
+  const composingSlash = dispatchKey('/', { isComposing: true });
+  expect(composingSlash.defaultPrevented).toBe(false);
+  const input = wrapper.find<HTMLInputElement>('input.switcher-search-input');
+  expect(input.attributes('readonly')).toBeDefined();
+});
+
+test('unrecognized key in quick mode and typing in search mode do not prevent default', async () => {
+  const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  // Non-letter key in quick mode
+  const evDigit = dispatchKey('1');
+  expect(evDigit.defaultPrevented).toBe(false);
+
+  // Enter search
+  dispatchKey('/');
+  await nextTick();
+
+  // Normal character key in search mode is not prevented
+  const evChar = dispatchKey('a');
+  expect(evChar.defaultPrevented).toBe(false);
+});
+
+test('listener is removed on unmount', () => {
+  const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+  const wrapper = mount(Switcher, {
+    props: { open: true, tabs },
+  });
+
+  wrapper.unmount();
+
+  const ev = dispatchKey('Escape');
+  expect(ev.defaultPrevented).toBe(false);
+  expect(wrapper.emitted('close')).toBeUndefined();
+});
+
+test('when open is false, keydown listener does not act', () => {
+  const tabs = [createTab({ id: 1, title: 'Tab 1' })];
+  const wrapper = mount(Switcher, {
+    props: { open: false, tabs },
+  });
+
+  const ev = dispatchKey('Escape');
+  expect(ev.defaultPrevented).toBe(false);
+  expect(wrapper.emitted('close')).toBeUndefined();
 });
