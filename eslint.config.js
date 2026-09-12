@@ -72,6 +72,9 @@ export default defineConfig(
         ...globals.browser,
       },
     },
+    rules: {
+      complexity: ['error', 10],
+    },
   },
   {
     files: ['*.config.{js,ts,mjs}', 'e2e/server.mjs'],
