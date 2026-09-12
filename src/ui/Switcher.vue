@@ -27,6 +27,7 @@ const mode = ref<'quick' | 'search'>('quick');
 const query = ref('');
 const selectedIndex = ref(0);
 const searchInputRef = ref<HTMLInputElement | null>(null);
+const viewportRef = ref<HTMLDivElement | null>(null);
 
 interface DisplayItem {
   readonly tab: SwitchableTab;
@@ -110,6 +111,9 @@ function resetState(): void {
   const items = getRecentTabs(props.tabs, null);
   selectedIndex.value = items.length > 0 ? 0 : -1;
   searchInputRef.value?.blur();
+  if (viewportRef.value) {
+    viewportRef.value.scrollTop = 0;
+  }
 }
 
 watch(
@@ -140,17 +144,30 @@ function exitSearch(): void {
   const recent = getRecentTabs(props.tabs, null);
   selectedIndex.value = recent.length > 0 ? 0 : -1;
   searchInputRef.value?.blur();
-}
-
-function onSearchInput(): void {
-  selectedIndex.value = displayedItems.value.length > 0 ? 0 : -1;
+  if (viewportRef.value) {
+    viewportRef.value.scrollTop = 0;
+  }
 }
 
 watch(query, () => {
   if (mode.value === 'search') {
     selectedIndex.value = displayedItems.value.length > 0 ? 0 : -1;
+    if (viewportRef.value) {
+      viewportRef.value.scrollTop = 0;
+    }
   }
 });
+
+watch(
+  selectedIndex,
+  () => {
+    const selectedEl = viewportRef.value?.querySelector<HTMLElement>('.tab-tile--selected');
+    if (selectedEl && typeof selectedEl.scrollIntoView === 'function') {
+      selectedEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+  },
+  { flush: 'post' },
+);
 
 function getDirection(key: string): SelectionDirection | null {
   if (key === 'ArrowLeft') {
@@ -334,7 +351,6 @@ function onBackdropClick(event: MouseEvent): void {
           :readonly="mode === 'quick'"
           placeholder="Search tabs..."
           aria-label="Search open tabs"
-          @input="onSearchInput"
         />
       </div>
 
@@ -361,19 +377,21 @@ function onBackdropClick(event: MouseEvent): void {
     </div>
 
     <div class="switcher-grid-surface">
-      <div v-if="displayedItems.length > 0" class="switcher-grid">
-        <TabTile
-          v-for="(item, index) in displayedItems"
-          :key="item.tab.id"
-          :tab="item.tab"
-          :selected="index === selectedIndex"
-          :hint="item.hint"
-          :hint-index="item.hintIndex"
-          @activate="onTileActivate"
-        />
-      </div>
-      <div v-else class="switcher-empty">
-        {{ mode === 'quick' ? 'No other tabs' : 'No matching tabs' }}
+      <div ref="viewportRef" class="switcher-grid-viewport">
+        <div v-if="displayedItems.length > 0" class="switcher-grid">
+          <TabTile
+            v-for="(item, index) in displayedItems"
+            :key="item.tab.id"
+            :tab="item.tab"
+            :selected="index === selectedIndex"
+            :hint="item.hint"
+            :hint-index="item.hintIndex"
+            @activate="onTileActivate"
+          />
+        </div>
+        <div v-else class="switcher-empty">
+          {{ mode === 'quick' ? 'No other tabs' : 'No matching tabs' }}
+        </div>
       </div>
     </div>
   </div>

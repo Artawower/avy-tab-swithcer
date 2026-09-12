@@ -56,6 +56,7 @@ test('Switcher renders search and close buttons and separate surfaces when open'
   expect(wrapper.find('input.switcher-search-input').exists()).toBe(true);
   expect(wrapper.find('button.switcher-close-btn').exists()).toBe(true);
   expect(wrapper.find('.switcher-grid-surface').exists()).toBe(true);
+  expect(wrapper.find('.switcher-grid-viewport').exists()).toBe(true);
 });
 
 test('Switcher caps quick mode to 10 tabs in MRU order with first selected', () => {
@@ -956,5 +957,31 @@ test('window blur while action is pending cancels action without emission', () =
     expect(wrapper.emitted('close')).toBeUndefined();
   } finally {
     vi.useRealTimers();
+  }
+});
+
+test('selection change scrolls newly selected tile into view', async () => {
+  const scrollSpy = vi
+    .spyOn(window.HTMLElement.prototype, 'scrollIntoView')
+    .mockImplementation(() => {});
+
+  try {
+    const tabs = [
+      createTab({ id: 1, title: 'Tab 1', lastAccessed: 200 }),
+      createTab({ id: 2, title: 'Tab 2', lastAccessed: 100 }),
+    ];
+    mount(Switcher, {
+      props: { open: true, tabs },
+    });
+
+    await nextTick();
+    scrollSpy.mockClear();
+
+    dispatchKey('ArrowRight');
+    await nextTick();
+
+    expect(scrollSpy).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
+  } finally {
+    scrollSpy.mockRestore();
   }
 });

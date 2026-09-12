@@ -21,7 +21,7 @@ function assertSurfaceStyles(styles: ElementVisualStyles): void {
   expect(styles.backgroundImage).toContain('gradient');
 }
 
-test('Layout stability: search and close heights are equal, panel height is invariant across filter counts, and internal scroll handles overflow', async ({
+test('Layout stability: search and close heights are equal (48px), panel height is invariant across filter counts, shell is overflow hidden, and viewport handles inset scrolling', async ({
   context,
   openSwitcher,
 }) => {
@@ -42,6 +42,7 @@ test('Layout stability: search and close heights are equal, panel height is inva
   const searchSurface = frame.locator('.switcher-search-surface');
   const closeBtn = frame.locator('.switcher-close-btn');
   const gridSurface = frame.locator('.switcher-grid-surface');
+  const gridViewport = frame.locator('.switcher-grid-viewport');
   const searchInput = frame.locator('.switcher-search-input');
 
   const searchBox = await searchSurface.boundingBox();
@@ -50,12 +51,62 @@ test('Layout stability: search and close heights are equal, panel height is inva
   expect(closeBox).not.toBeNull();
   if (searchBox && closeBox) {
     expect(Math.round(searchBox.height)).toBe(Math.round(closeBox.height));
-    expect(Math.round(searchBox.height)).toBe(42);
-    expect(Math.round(closeBox.width)).toBe(42);
+    expect(Math.round(searchBox.height)).toBe(48);
+    expect(Math.round(closeBox.width)).toBe(48);
   }
 
+  const shellStyles = await gridSurface.evaluate((el: HTMLElement) => {
+    const cs = window.getComputedStyle(el);
+    return {
+      overflowX: cs.overflowX,
+      overflowY: cs.overflowY,
+      paddingTop: cs.paddingTop,
+      paddingRight: cs.paddingRight,
+      paddingBottom: cs.paddingBottom,
+      paddingLeft: cs.paddingLeft,
+    };
+  });
+  expect(shellStyles.overflowX).toBe('hidden');
+  expect(shellStyles.overflowY).toBe('hidden');
+  expect(shellStyles.paddingTop).toBe('8px');
+  expect(shellStyles.paddingRight).toBe('8px');
+  expect(shellStyles.paddingBottom).toBe('8px');
+  expect(shellStyles.paddingLeft).toBe('8px');
+
+  await expect(gridViewport).toBeVisible();
+  const viewportStyles = await gridViewport.evaluate((el: HTMLElement) => {
+    const cs = window.getComputedStyle(el);
+    return {
+      overflowY: cs.overflowY,
+      overscrollBehaviorY: cs.overscrollBehaviorY,
+      paddingTop: cs.paddingTop,
+      paddingRight: cs.paddingRight,
+      paddingBottom: cs.paddingBottom,
+      paddingLeft: cs.paddingLeft,
+    };
+  });
+  expect(['auto', 'scroll']).toContain(viewportStyles.overflowY);
+  expect(viewportStyles.overscrollBehaviorY).toBe('contain');
+  expect(viewportStyles.paddingTop).toBe('20px');
+  expect(viewportStyles.paddingRight).toBe('20px');
+  expect(viewportStyles.paddingBottom).toBe('20px');
+  expect(viewportStyles.paddingLeft).toBe('20px');
+
   const initialGridBox = await gridSurface.boundingBox();
+  const initialViewportBox = await gridViewport.boundingBox();
   expect(initialGridBox).not.toBeNull();
+  expect(initialViewportBox).not.toBeNull();
+  if (initialGridBox && initialViewportBox) {
+    expect(initialViewportBox.y).toBeGreaterThanOrEqual(initialGridBox.y + 7.5);
+    expect(initialViewportBox.x).toBeGreaterThanOrEqual(initialGridBox.x + 7.5);
+    expect(initialViewportBox.y + initialViewportBox.height).toBeLessThanOrEqual(
+      initialGridBox.y + initialGridBox.height - 7.5,
+    );
+    expect(initialViewportBox.x + initialViewportBox.width).toBeLessThanOrEqual(
+      initialGridBox.x + initialGridBox.width - 7.5,
+    );
+  }
+
   const expectedHeight = initialGridBox ? Math.round(initialGridBox.height) : 0;
   expect(expectedHeight).toBeGreaterThan(0);
 
@@ -70,7 +121,7 @@ test('Layout stability: search and close heights are equal, panel height is inva
   }
 
   const initialPageScrollY = await currentPage.evaluate(() => window.scrollY);
-  const scrolledTop = await gridSurface.evaluate((el: HTMLElement) => {
+  const scrolledTop = await gridViewport.evaluate((el: HTMLElement) => {
     el.scrollTop = 60;
     return el.scrollTop;
   });
@@ -78,6 +129,19 @@ test('Layout stability: search and close heights are equal, panel height is inva
 
   const pageScrollAfterInternalScroll = await currentPage.evaluate(() => window.scrollY);
   expect(pageScrollAfterInternalScroll).toBe(initialPageScrollY);
+
+  await gridViewport.hover();
+  await currentPage.mouse.wheel(0, 40);
+  const pageScrollAfterWheel = await currentPage.evaluate(() => window.scrollY);
+  expect(pageScrollAfterWheel).toBe(initialPageScrollY);
+
+  await gridViewport.evaluate((el: HTMLElement) => {
+    el.scrollTop = 0;
+  });
+  await currentPage.keyboard.press('ArrowDown');
+  await currentPage.keyboard.press('ArrowDown');
+  const scrollAfterDown = await gridViewport.evaluate((el: HTMLElement) => el.scrollTop);
+  expect(scrollAfterDown).toBeGreaterThan(0);
 
   await searchInput.fill('Tab 14');
   await expect(frame.locator('.tab-tile')).toHaveCount(1);

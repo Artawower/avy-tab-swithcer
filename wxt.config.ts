@@ -17,7 +17,7 @@ export default defineConfig({
   },
   manifest: ({ browser }) => ({
     name: 'Avy Tab Switcher',
-    version: '0.1.0',
+    version: '0.1.2',
     description: 'Keyboard-driven tab switcher using jump labels.',
     permissions: ['tabs', 'activeTab', 'scripting'],
     web_accessible_resources: [

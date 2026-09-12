@@ -122,3 +122,67 @@ test('Search and close flow: searches beyond top 10 MRU, Enter activates, and cl
   await secondReopenFrame.locator('.switcher-close-btn').click();
   await expect(needlePage.locator('#avy-tab-switcher-root iframe')).toBeHidden();
 });
+
+test('Backdrop close: clicking outside surfaces closes overlay and restores host focus; inner clicks do not close', async ({
+  context,
+  openSwitcher,
+}) => {
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.goto('http://localhost:3456/?title=Backdrop%20Host%20Page');
+
+  const otherPage = await context.newPage();
+  await otherPage.goto('http://localhost:3456/?title=Other%20Tab');
+  await otherPage.waitForTimeout(60);
+
+  await page.bringToFront();
+  await page.waitForTimeout(60);
+
+  await page.evaluate(() => {
+    const input = document.createElement('input');
+    input.id = 'host-prior-input';
+    document.body.appendChild(input);
+  });
+
+  const hostInput = page.locator('#host-prior-input');
+  await hostInput.focus();
+  await expect(hostInput).toBeFocused();
+
+  const frame = await openSwitcher(page);
+  const overlay = frame.locator('.switcher-overlay');
+  await expect(overlay).toBeVisible();
+
+  // Click a safe outside point on .switcher-overlay
+  await overlay.click({ position: { x: 20, y: 20 } });
+
+  // Assert iframe is hidden and prior input focus restored
+  await expect(page.locator('#avy-tab-switcher-root iframe')).toBeHidden();
+  await expect(hostInput).toBeFocused();
+
+  // Reopen
+  const reopenedFrame = await openSwitcher(page);
+  const reopenedOverlay = reopenedFrame.locator('.switcher-overlay');
+  await expect(reopenedOverlay).toBeVisible();
+
+  // Verify clicks within search surface do not close
+  await reopenedFrame.locator('.switcher-search-surface').click();
+  await expect(page.locator('#avy-tab-switcher-root iframe')).toBeVisible();
+
+  // Verify clicks within results shell do not close
+  await reopenedFrame.locator('.switcher-grid-surface').click({ position: { x: 4, y: 4 } });
+  await expect(page.locator('#avy-tab-switcher-root iframe')).toBeVisible();
+
+  // Verify clicks within scroll viewport do not close
+  await reopenedFrame.locator('.switcher-grid-viewport').click({ position: { x: 10, y: 10 } });
+  await expect(page.locator('#avy-tab-switcher-root iframe')).toBeVisible();
+
+  // Existing close button behavior must remain
+  await reopenedFrame.locator('.switcher-close-btn').click();
+  await expect(page.locator('#avy-tab-switcher-root iframe')).toBeHidden();
+
+  // Reopen and verify tile activation still works
+  const tileFrame = await openSwitcher(page);
+  await expect(tileFrame.locator('.switcher-overlay')).toBeVisible();
+  const firstTile = tileFrame.locator('.tab-tile').first();
+  await firstTile.click();
+  await expect(page.locator('#avy-tab-switcher-root iframe')).toBeHidden();
+});
