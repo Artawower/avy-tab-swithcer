@@ -1,0 +1,80 @@
+:PROPERTIES:
+:ID: F4EB2E36-C7DA-4B1B-B395-ABDE2A316096
+:END:
+
+#+TITLE: ✨ Avy Tab Switcher
+
+#+HTML: <p align="center">
+#+HTML: <img src="./images/logo.png" width="180" alt="Avy Tab Switcher">
+#+HTML: </p>
+
+#+HTML: <p align="center">
+#+HTML: <a href="https://developer.chrome.com/docs/extensions/"><img src="https://img.shields.io/badge/Chrome-MV3-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome MV3"></a>
+#+HTML: <a href="https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions"><img src="https://img.shields.io/badge/Firefox-MV3-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white" alt="Firefox MV3"></a>
+#+HTML: <a href="https://wxt.dev/"><img src="https://img.shields.io/badge/WXT-0.21.4-67D4FF?style=for-the-badge" alt="WXT"></a>
+#+HTML: </p>
+
+#+HTML: <p align="center">
+#+HTML: <a href="https://github.com/artawower/avy-tab-switcher"><img src="https://img.shields.io/badge/GitHub-avy--tab--switcher-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"></a>
+#+HTML: <a href="https://github.com/artawower/avy-tab-switcher/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/artawower/avy-tab-switcher/ci.yml?style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI"></a>
+#+HTML: <a href="https://wakatime.com/badge/github/Artawower/avy-tab-switcher"><img src="https://img.shields.io/endpoint?style=for-the-badge&url=https://wakatime.com/badge/github/Artawower/avy-tab-switcher.json" alt="WakaTime"></a>
+#+HTML: </p>
+
+#+HTML: <p align="center">
+#+HTML: <a href="https://www.paypal.me/darkawower"><img src="https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="PayPal"></a>
+#+HTML: <a href="https://ko-fi.com/artawower"><img src="https://img.shields.io/badge/Ko--fi-Support-FF5E5B?style=for-the-badge&logo=kofi&logoColor=white" alt="Ko-fi"></a>
+#+HTML: <a href="https://patreon.com/artawower"><img src="https://img.shields.io/badge/Patreon-Support-F96854?style=for-the-badge&logo=patreon&logoColor=white" alt="Patreon"></a>
+#+HTML: </p>
+
+* Introduction
+
+*Avy Tab Switcher* is a keyboard-first visual tab switcher for Chrome, other Chromium-based browsers, and Firefox. Press ~Alt+Q~ to open your most recently used tabs, then switch with a single mnemonic key, the arrow keys, or search.
+
+#+HTML: <p align="center">
+#+HTML: <img src="./images/screenshot.png" width="900" alt="Avy Tab Switcher showing recently used tabs">
+#+HTML: </p>
+
+The active tab is excluded, quick mode shows up to ten recent tabs, and search covers every matching tab in the current window. Everything runs locally without analytics or telemetry.
+
+* Connected links
+
+- [[https://github.com/artawower/avy-tab-switcher][Source code]]
+- [[https://github.com/artawower/avy-tab-switcher/issues][Issues]]
+- [[https://github.com/artawower/avy-tab-switcher/releases][Releases]]
+
+* Install
+
+Download and extract the package for your browser from [[https://github.com/artawower/avy-tab-switcher/releases][GitHub Releases]].
+
+** Chrome and other Chromium-based browsers
+
+1. Open ~chrome://extensions~.
+2. Enable *Developer mode*.
+3. Choose *Load unpacked* and select the extracted Chrome package.
+
+** Firefox
+
+1. Open ~about:debugging#/runtime/this-firefox~.
+2. Choose *Load Temporary Add-on...*.
+3. Select ~manifest.json~ from the extracted Firefox package.
+
+* Usage
+
+| Key                 | Action                                         |
+|---------------------+------------------------------------------------|
+| ~Alt+Q~             | Open the tab switcher                          |
+| Highlighted letter  | Switch directly to that tab                    |
+| ~←~ ~→~ ~↑~ ~↓~     | Move through the tab grid                      |
+| ~Enter~             | Open the selected tab                          |
+| ~/~                 | Search tab titles and hostnames                |
+| ~Escape~            | Leave search mode or close the switcher        |
+| Click a tab         | Switch to it                                   |
+| Click outside / ~×~ | Close the switcher and restore the prior focus |
+
+Change the shortcut from ~chrome://extensions/shortcuts~ in Chromium or from *Manage Extension Shortcuts* in Firefox's add-on settings.
+
+* 🍩 Contribute guide
+
+Any contribution is very much appreciated! Please use the [[https://github.com/artawower/avy-tab-switcher/issues][issue tracker]] for bug reports and suggestions, or open a focused pull request.
+
+I would also appreciate it if you would consider supporting my work via [[https://ko-fi.com/artawower][Ko-fi]], [[https://www.paypal.me/darkawower][PayPal]], or becoming my [[https://www.patreon.com/artawower][patron]].
