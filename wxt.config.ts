@@ -3,6 +3,18 @@ import { defineConfig } from 'wxt';
 export default defineConfig({
   manifestVersion: 3,
   modules: ['@wxt-dev/module-vue'],
+  zip: {
+    excludeSources: [
+      'coverage/**',
+      'test-results/**',
+      'playwright-report/**',
+      'blob-report/**',
+      '.vitest/**',
+      '.cache/**',
+      '.playwright-profile/**',
+      'user-data-dir/**',
+    ],
+  },
   manifest: ({ browser }) => ({
     name: 'Avy Tab Switcher',
     version: '0.1.0',
