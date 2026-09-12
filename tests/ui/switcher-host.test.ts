@@ -22,6 +22,24 @@ test('creates singleton host with open shadow root, title, and hidden iframe', (
   }
 });
 
+test('propagates the page color scheme to the iframe element and URL', () => {
+  const rootStyle = document.documentElement.style;
+  const previousColorScheme = rootStyle.getPropertyValue('color-scheme');
+  const previousPriority = rootStyle.getPropertyPriority('color-scheme');
+  rootStyle.setProperty('color-scheme', 'dark');
+
+  const controller = createSwitcherHost(document);
+  try {
+    controller.open('about:blank?sessionId=session-themed');
+
+    expect(controller.iframe.style.getPropertyValue('color-scheme')).toBe('dark');
+    expect(new URL(controller.iframe.src).searchParams.get('colorScheme')).toBe('dark');
+  } finally {
+    controller.destroy();
+    rootStyle.setProperty('color-scheme', previousColorScheme, previousPriority);
+  }
+});
+
 test('open shows and focuses iframe; close hides iframe and restores prior page focus', () => {
   const input = document.createElement('input');
   document.body.appendChild(input);
@@ -33,7 +51,9 @@ test('open shows and focuses iframe; close hides iframe and restores prior page 
     controller.open('about:blank?sessionId=session-1');
     expect(controller.isOpen()).toBe(true);
     expect(controller.iframe.style.display).toBe('block');
-    expect(controller.iframe.src).toBe('about:blank?sessionId=session-1');
+    const frameUrl = new URL(controller.iframe.src);
+    expect(frameUrl.searchParams.get('sessionId')).toBe('session-1');
+    expect(frameUrl.searchParams.get('colorScheme')).toBe('normal');
 
     controller.close();
     expect(controller.isOpen()).toBe(false);

@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest';
 import { nextTick } from 'vue';
 import type { FrameCloseMessage } from '../../src/application/messages';
 import {
+  applyFrameColorScheme,
   createFrameAppComponent,
   defaultFrameAppPort,
   HEARTBEAT_INTERVAL_MS,
@@ -10,6 +11,23 @@ import {
   type FrameAppPort,
 } from '../../src/ui/frame-main';
 import { createTab } from '../fixtures/tab';
+
+test('applies the parent page color scheme supplied in the frame URL', () => {
+  const root = document.createElement('html');
+
+  applyFrameColorScheme(root, '?sessionId=session-1&colorScheme=dark');
+
+  expect(root.style.getPropertyValue('color-scheme')).toBe('dark');
+});
+
+test('keeps the existing frame color scheme when the URL omits it', () => {
+  const root = document.createElement('html');
+  root.style.setProperty('color-scheme', 'light');
+
+  applyFrameColorScheme(root, '?sessionId=session-1');
+
+  expect(root.style.getPropertyValue('color-scheme')).toBe('light');
+});
 
 test('tears down via notifyClose if sessionId is missing', async () => {
   const sendMessage = vi.fn().mockResolvedValue({ ok: true, tabs: [] });

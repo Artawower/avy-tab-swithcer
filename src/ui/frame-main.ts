@@ -37,6 +37,13 @@ export const defaultFrameAppPort: FrameAppPort = {
 
 export const HEARTBEAT_INTERVAL_MS = 15_000;
 
+export function applyFrameColorScheme(root: HTMLElement, search: string): void {
+  const colorScheme = new URLSearchParams(search).get('colorScheme');
+  if (colorScheme) {
+    root.style.setProperty('color-scheme', colorScheme);
+  }
+}
+
 export function createFrameAppComponent(port: FrameAppPort = defaultFrameAppPort) {
   return defineComponent({
     name: 'AvyFrameApp',
@@ -193,5 +200,6 @@ export function mountFrameApp(
 }
 
 if (typeof document !== 'undefined' && document.getElementById('app')) {
+  applyFrameColorScheme(document.documentElement, window.location.search);
   mountFrameApp('#app');
 }

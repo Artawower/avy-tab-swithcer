@@ -333,3 +333,35 @@ test('Visual styling and material: non-transparent borders, multi-layer shadows 
     expect(darkStyles.selected.backgroundColor).not.toBe(lightStyles.selected.backgroundColor);
   }
 });
+
+test('Themed pages: iframe and embedded document use the page color scheme for a transparent canvas', async ({
+  context,
+  openSwitcher,
+}) => {
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.goto('http://localhost:3456/?title=Themed%20Host');
+
+  const otherPage = await context.newPage();
+  await otherPage.goto('http://localhost:3456/?title=Other%20Tab');
+  await page.bringToFront();
+
+  await page.evaluate(() => {
+    document.documentElement.style.colorScheme = 'dark';
+  });
+
+  const frame = await openSwitcher(page);
+  const iframeColorScheme = await page
+    .locator('#avy-tab-switcher-root iframe')
+    .evaluate((iframe) => window.getComputedStyle(iframe).colorScheme);
+  const frameStyles = await frame.locator('html').evaluate((root) => {
+    const styles = window.getComputedStyle(root);
+    return {
+      backgroundColor: styles.backgroundColor,
+      colorScheme: styles.colorScheme,
+    };
+  });
+
+  expect(iframeColorScheme).toBe('dark');
+  expect(frameStyles.colorScheme).toBe('dark');
+  expect(frameStyles.backgroundColor).toBe('rgba(0, 0, 0, 0)');
+});

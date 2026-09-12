@@ -1,5 +1,23 @@
 export const SWITCHER_HOST_ID = 'avy-tab-switcher-root';
 
+function getPageColorScheme(doc: Document): string {
+  const computedColorScheme = doc.defaultView
+    ?.getComputedStyle(doc.documentElement)
+    .getPropertyValue('color-scheme')
+    .trim();
+  return computedColorScheme || 'normal';
+}
+
+function addColorScheme(frameUrl: string, colorScheme: string): string {
+  try {
+    const url = new URL(frameUrl);
+    url.searchParams.set('colorScheme', colorScheme);
+    return url.toString();
+  } catch {
+    return frameUrl;
+  }
+}
+
 export function getDeepActiveElement(root: Document | ShadowRoot = document): Element | null {
   let current: Element | null = root.activeElement;
   while (current?.shadowRoot?.activeElement) {
@@ -178,7 +196,9 @@ function getController(
         recordPriorFocus();
       }
       isHostOpen = true;
-      iframe.src = frameUrl;
+      const colorScheme = getPageColorScheme(doc);
+      iframe.style.setProperty('color-scheme', colorScheme, 'important');
+      iframe.src = addColorScheme(frameUrl, colorScheme);
       iframe.style.setProperty('display', 'block', 'important');
       iframe.focus();
     },
