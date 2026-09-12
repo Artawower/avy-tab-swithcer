@@ -17,7 +17,7 @@ export interface SwitcherSession {
   };
 }
 
-export const SESSION_TTL_MS = 60_000;
+const SESSION_TTL_MS = 60_000;
 
 export interface SessionStore {
   createSession: (tabId: number, windowId: number, now?: number) => SwitcherSession;
@@ -51,6 +51,28 @@ export function createSessionStore(ttlMs = SESSION_TTL_MS): SessionStore {
     return true;
   };
 
+  const getLiveSessionForTab = (
+    sessionId: string,
+    sender: SessionSenderContext,
+    now: number,
+  ): SwitcherSession | null => {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      return null;
+    }
+
+    if (isExpired(session, now)) {
+      sessions.delete(sessionId);
+      return null;
+    }
+
+    if (session.tabId !== sender.tabId || session.windowId !== sender.windowId) {
+      return null;
+    }
+
+    return session;
+  };
+
   return {
     createSession(tabId: number, windowId: number, now = Date.now()): SwitcherSession {
       const sessionId = crypto.randomUUID();
@@ -66,17 +88,8 @@ export function createSessionStore(ttlMs = SESSION_TTL_MS): SessionStore {
     },
 
     claimSession(sessionId: string, sender: SessionSenderContext, now = Date.now()): boolean {
-      const session = sessions.get(sessionId);
+      const session = getLiveSessionForTab(sessionId, sender, now);
       if (!session) {
-        return false;
-      }
-
-      if (isExpired(session, now)) {
-        sessions.delete(sessionId);
-        return false;
-      }
-
-      if (session.tabId !== sender.tabId || session.windowId !== sender.windowId) {
         return false;
       }
 
@@ -97,21 +110,8 @@ export function createSessionStore(ttlMs = SESSION_TTL_MS): SessionStore {
     },
 
     validateSession(sessionId: string, sender: SessionSenderContext, now = Date.now()): boolean {
-      const session = sessions.get(sessionId);
-      if (!session) {
-        return false;
-      }
-
-      if (isExpired(session, now)) {
-        sessions.delete(sessionId);
-        return false;
-      }
-
-      if (session.tabId !== sender.tabId || session.windowId !== sender.windowId) {
-        return false;
-      }
-
-      if (!session.claimedSender) {
+      const session = getLiveSessionForTab(sessionId, sender, now);
+      if (!session || !session.claimedSender) {
         return false;
       }
 
@@ -119,14 +119,12 @@ export function createSessionStore(ttlMs = SESSION_TTL_MS): SessionStore {
     },
 
     refreshSession(sessionId: string, sender: SessionSenderContext, now = Date.now()): boolean {
-      const valid = this.validateSession(sessionId, sender, now);
-      if (!valid) {
+      const session = getLiveSessionForTab(sessionId, sender, now);
+      if (!session || !session.claimedSender || !senderMatches(session.claimedSender, sender)) {
         return false;
       }
-      const session = sessions.get(sessionId);
-      if (session) {
-        session.lastSeenAt = now;
-      }
+
+      session.lastSeenAt = now;
       return true;
     },
 
