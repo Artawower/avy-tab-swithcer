@@ -1,6 +1,7 @@
 import type { SwitchableTab } from '../domain/tab';
 import { getRecentTabs } from '../domain/tab-order';
-import type { ActivateTabResult } from './messages';
+import { isNonNegativeInteger, type ActivateTabResult } from './messages';
+import { parseHostname } from './url';
 
 export interface BrowserTabData {
   readonly id?: number;
@@ -11,47 +12,31 @@ export interface BrowserTabData {
   readonly lastAccessed?: number;
 }
 
+function normalizeFaviconUrl(favIconUrl: unknown): string | null {
+  return typeof favIconUrl === 'string' && favIconUrl.length > 0 ? favIconUrl : null;
+}
+
+function normalizeLastAccessed(lastAccessed: unknown): number | null {
+  return typeof lastAccessed === 'number' && Number.isFinite(lastAccessed) ? lastAccessed : null;
+}
+
 export function toSwitchableTab(tab: BrowserTabData): SwitchableTab | null {
   const { id, windowId } = tab;
-  if (
-    typeof id !== 'number' ||
-    !Number.isInteger(id) ||
-    id < 0 ||
-    typeof windowId !== 'number' ||
-    !Number.isInteger(windowId) ||
-    windowId < 0
-  ) {
+  if (!isNonNegativeInteger(id) || !isNonNegativeInteger(windowId)) {
     return null;
   }
 
   const title = typeof tab.title === 'string' ? tab.title : '';
   const url = typeof tab.url === 'string' ? tab.url : '';
 
-  let hostname = '';
-  if (url.length > 0) {
-    try {
-      hostname = new URL(url).hostname.toLowerCase();
-    } catch {
-      hostname = '';
-    }
-  }
-
-  const faviconUrl =
-    typeof tab.favIconUrl === 'string' && tab.favIconUrl.length > 0 ? tab.favIconUrl : null;
-
-  const lastAccessed =
-    typeof tab.lastAccessed === 'number' && Number.isFinite(tab.lastAccessed)
-      ? tab.lastAccessed
-      : null;
-
   return {
     id,
     windowId,
     title,
     url,
-    hostname,
-    faviconUrl,
-    lastAccessed,
+    hostname: parseHostname(url),
+    faviconUrl: normalizeFaviconUrl(tab.favIconUrl),
+    lastAccessed: normalizeLastAccessed(tab.lastAccessed),
   };
 }
 

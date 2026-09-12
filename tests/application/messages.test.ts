@@ -183,6 +183,10 @@ test('isHeartbeatSwitcherSessionResult accepts valid results', () => {
 
   const unexpected: unknown = { ok: false, reason: 'unexpected' };
   expect(isHeartbeatSwitcherSessionResult(unexpected)).toBe(true);
+
+  expect(
+    isHeartbeatSwitcherSessionResult({ ok: false, reason: 'unauthorized', extra: 'allowed' }),
+  ).toBe(true);
 });
 
 test('isHeartbeatSwitcherSessionResult rejects invalid payloads', () => {
@@ -384,4 +388,37 @@ test('isActivateTabResult accepts all valid failure reasons including unauthoriz
       expect.fail(`Expected isActivateTabResult to return true for reason: ${item.reason}`);
     }
   }
+});
+
+test('isActivateTabResult rejects non-records and malformed ok values', () => {
+  expect(isActivateTabResult(null)).toBe(false);
+  expect(isActivateTabResult(undefined)).toBe(false);
+  expect(isActivateTabResult(123)).toBe(false);
+  expect(isActivateTabResult('string')).toBe(false);
+  expect(isActivateTabResult({ ok: 'true' })).toBe(false);
+  expect(isActivateTabResult({ ok: 1 })).toBe(false);
+  expect(isActivateTabResult({ ok: null })).toBe(false);
+  expect(isActivateTabResult({ ok: undefined })).toBe(false);
+  expect(isActivateTabResult({ ok: {} })).toBe(false);
+});
+
+test('isActivateTabResult rejects missing required fields', () => {
+  expect(isActivateTabResult({})).toBe(false);
+  expect(isActivateTabResult({ reason: 'unauthorized' })).toBe(false);
+  expect(isActivateTabResult({ ok: false })).toBe(false);
+});
+
+test('isActivateTabResult rejects invalid failure reasons', () => {
+  expect(isActivateTabResult({ ok: false, reason: 'invalid-reason' })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: '' })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: 123 })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: null })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: undefined })).toBe(false);
+});
+
+test('isActivateTabResult rejects payloads with extra keys', () => {
+  expect(isActivateTabResult({ ok: true, extra: 'forbidden' })).toBe(false);
+  expect(isActivateTabResult({ ok: true, reason: 'unauthorized' })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: 'unauthorized', extra: true })).toBe(false);
+  expect(isActivateTabResult({ ok: false, reason: 'tab-unavailable', foo: 'bar' })).toBe(false);
 });

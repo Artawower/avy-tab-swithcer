@@ -1,12 +1,13 @@
-import type {
-  ActivateTabMessage,
-  ActivateTabResult,
-  CloseSwitcherSessionMessage,
-  HeartbeatSwitcherSessionMessage,
-  HeartbeatSwitcherSessionResult,
-  OpenSwitcherHostMessage,
-  RequestSwitcherDataMessage,
-  RequestSwitcherDataResult,
+import {
+  isNonNegativeInteger,
+  type ActivateTabMessage,
+  type ActivateTabResult,
+  type CloseSwitcherSessionMessage,
+  type HeartbeatSwitcherSessionMessage,
+  type HeartbeatSwitcherSessionResult,
+  type OpenSwitcherHostMessage,
+  type RequestSwitcherDataMessage,
+  type RequestSwitcherDataResult,
 } from './messages';
 import type { SessionSenderContext, SessionStore, SwitcherSession } from './sessions';
 import {
@@ -15,6 +16,7 @@ import {
   type BrowserTabData,
   type TabActivationPort,
 } from './tab-operations';
+import { tryParseUrl } from './url';
 
 export interface SwitcherBackgroundPort {
   readonly queryActiveTab: () => Promise<BrowserTabData | null>;
@@ -25,12 +27,18 @@ export interface SwitcherBackgroundPort {
 }
 
 export function isInjectablePageUrl(url: string): boolean {
-  if (!url) {
-    return false;
-  }
+  const parsed = tryParseUrl(url);
+  return parsed !== null && (parsed.protocol === 'http:' || parsed.protocol === 'https:');
+}
+
+async function tryOpenExistingHost(
+  port: SwitcherBackgroundPort,
+  tabId: number,
+  message: OpenSwitcherHostMessage,
+): Promise<boolean> {
   try {
-    const parsed = new URL(url);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    await port.sendOpenHostMessage(tabId, message);
+    return true;
   } catch {
     return false;
   }
@@ -58,11 +66,9 @@ export async function openCurrentWindowSwitcher(
     frameUrl,
   };
 
-  try {
-    await port.sendOpenHostMessage(switchableActive.id, message);
+  const opened = await tryOpenExistingHost(port, switchableActive.id, message);
+  if (opened) {
     return session;
-  } catch {
-    // Initial send failed (host script not yet injected)
   }
 
   try {
@@ -91,23 +97,23 @@ export function isExtensionFrameUrl(url?: string, expectedFrameUrl?: string): bo
   if (!url) {
     return !expectedFrameUrl;
   }
-  try {
-    const parsed = new URL(url);
-    if (parsed.pathname !== '/frame.html') {
-      return false;
-    }
-    if (expectedFrameUrl) {
-      const expected = new URL(expectedFrameUrl);
-      return (
-        parsed.protocol === expected.protocol &&
-        parsed.host === expected.host &&
-        parsed.pathname === expected.pathname
-      );
-    }
-    return parsed.protocol === 'chrome-extension:' || parsed.protocol === 'moz-extension:';
-  } catch {
+
+  const parsed = tryParseUrl(url);
+  if (!parsed || parsed.pathname !== '/frame.html') {
     return false;
   }
+
+  if (expectedFrameUrl) {
+    const expected = tryParseUrl(expectedFrameUrl);
+    return (
+      expected !== null &&
+      parsed.protocol === expected.protocol &&
+      parsed.host === expected.host &&
+      parsed.pathname === expected.pathname
+    );
+  }
+
+  return parsed.protocol === 'chrome-extension:' || parsed.protocol === 'moz-extension:';
 }
 
 export function extractSenderContext(
@@ -119,15 +125,9 @@ export function extractSenderContext(
   const frameId = sender.frameId;
 
   if (
-    typeof tabId !== 'number' ||
-    !Number.isInteger(tabId) ||
-    tabId < 0 ||
-    typeof windowId !== 'number' ||
-    !Number.isInteger(windowId) ||
-    windowId < 0 ||
-    typeof frameId !== 'number' ||
-    !Number.isInteger(frameId) ||
-    frameId < 0
+    !isNonNegativeInteger(tabId) ||
+    !isNonNegativeInteger(windowId) ||
+    !isNonNegativeInteger(frameId)
   ) {
     return null;
   }

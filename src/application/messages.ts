@@ -51,13 +51,6 @@ export interface FrameInitErrorMessage {
 
 export type FrameToParentMessage = FrameCloseMessage | FrameInitErrorMessage;
 
-export type BackgroundToContentMessage = OpenSwitcherHostMessage;
-export type ContentToBackgroundMessage =
-  | RequestSwitcherDataMessage
-  | ActivateTabMessage
-  | CloseSwitcherSessionMessage
-  | HeartbeatSwitcherSessionMessage;
-
 export type ActivateTabResult =
   | { readonly ok: true }
   | {
@@ -65,12 +58,51 @@ export type ActivateTabResult =
       readonly reason: 'tab-unavailable' | 'wrong-window' | 'unauthorized' | 'unexpected';
     };
 
+const ACTIVATE_FAILURE_REASONS = new Set([
+  'tab-unavailable',
+  'wrong-window',
+  'unauthorized',
+  'unexpected',
+]);
+
+const SESSION_ERROR_REASONS = new Set(['unauthorized', 'unexpected']);
+
+const SUCCESS_RESULT_KEYS = ['ok'] as const;
+const ACTIVATE_FAILURE_KEYS = ['ok', 'reason'] as const;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isNonNegativeInteger(value: unknown): value is number {
+export function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function hasExactKeys(record: Record<string, unknown>, expectedKeys: readonly string[]): boolean {
+  const keys = Object.keys(record);
+  if (keys.length !== expectedKeys.length) {
+    return false;
+  }
+
+  for (const key of expectedKeys) {
+    if (!Object.hasOwn(record, key)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function isValidFaviconUrl(value: unknown): boolean {
+  return value === null || typeof value === 'string';
+}
+
+function isValidTabRecency(value: unknown): boolean {
+  return value === null || (typeof value === 'number' && Number.isFinite(value));
 }
 
 export function isSwitchableTab(value: unknown): value is SwitchableTab {
@@ -80,41 +112,25 @@ export function isSwitchableTab(value: unknown): value is SwitchableTab {
 
   const { id, windowId, title, url, hostname, faviconUrl, lastAccessed } = value;
 
-  if (!isNonNegativeInteger(id) || !isNonNegativeInteger(windowId)) {
-    return false;
-  }
-
-  if (typeof title !== 'string' || typeof url !== 'string' || typeof hostname !== 'string') {
-    return false;
-  }
-
-  if (typeof faviconUrl !== 'string' && faviconUrl !== null) {
-    return false;
-  }
-
-  if (
-    lastAccessed !== null &&
-    (typeof lastAccessed !== 'number' || !Number.isFinite(lastAccessed))
-  ) {
-    return false;
-  }
-
-  return true;
+  return (
+    isNonNegativeInteger(id) &&
+    isNonNegativeInteger(windowId) &&
+    typeof title === 'string' &&
+    typeof url === 'string' &&
+    typeof hostname === 'string' &&
+    isValidFaviconUrl(faviconUrl) &&
+    isValidTabRecency(lastAccessed)
+  );
 }
 
 export function isHeartbeatSwitcherSessionMessage(
   value: unknown,
 ): value is HeartbeatSwitcherSessionMessage {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (value['type'] !== 'HEARTBEAT_SWITCHER_SESSION') {
-    return false;
-  }
-
-  const sessionId = value['sessionId'];
-  return typeof sessionId === 'string' && sessionId.length > 0;
+  return (
+    isRecord(value) &&
+    value['type'] === 'HEARTBEAT_SWITCHER_SESSION' &&
+    isNonEmptyString(value['sessionId'])
+  );
 }
 
 export function isHeartbeatSwitcherSessionResult(
@@ -125,48 +141,32 @@ export function isHeartbeatSwitcherSessionResult(
   }
 
   if (value['ok'] === true) {
-    return Object.keys(value).length === 1;
+    return hasExactKeys(value, SUCCESS_RESULT_KEYS);
   }
 
   if (value['ok'] === false) {
     const reason = value['reason'];
-    return reason === 'unauthorized' || reason === 'unexpected';
+    return typeof reason === 'string' && SESSION_ERROR_REASONS.has(reason);
   }
 
   return false;
 }
 
 export function isOpenSwitcherHostMessage(value: unknown): value is OpenSwitcherHostMessage {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (value['type'] !== 'OPEN_SWITCHER_HOST') {
-    return false;
-  }
-
-  const sessionId = value['sessionId'];
-  const frameUrl = value['frameUrl'];
-
   return (
-    typeof sessionId === 'string' &&
-    sessionId.length > 0 &&
-    typeof frameUrl === 'string' &&
-    frameUrl.length > 0
+    isRecord(value) &&
+    value['type'] === 'OPEN_SWITCHER_HOST' &&
+    isNonEmptyString(value['sessionId']) &&
+    isNonEmptyString(value['frameUrl'])
   );
 }
 
 export function isRequestSwitcherDataMessage(value: unknown): value is RequestSwitcherDataMessage {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (value['type'] !== 'REQUEST_SWITCHER_DATA') {
-    return false;
-  }
-
-  const sessionId = value['sessionId'];
-  return typeof sessionId === 'string' && sessionId.length > 0;
+  return (
+    isRecord(value) &&
+    value['type'] === 'REQUEST_SWITCHER_DATA' &&
+    isNonEmptyString(value['sessionId'])
+  );
 }
 
 export function isRequestSwitcherDataResult(value: unknown): value is RequestSwitcherDataResult {
@@ -181,60 +181,39 @@ export function isRequestSwitcherDataResult(value: unknown): value is RequestSwi
 
   if (value['ok'] === false) {
     const reason = value['reason'];
-    return reason === 'unauthorized' || reason === 'unexpected';
+    return typeof reason === 'string' && SESSION_ERROR_REASONS.has(reason);
   }
 
   return false;
 }
 
 export function isActivateTabMessage(value: unknown): value is ActivateTabMessage {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (value['type'] !== 'ACTIVATE_TAB') {
-    return false;
-  }
-
-  const tabId = value['tabId'];
-  const sessionId = value['sessionId'];
-
-  return isNonNegativeInteger(tabId) && typeof sessionId === 'string' && sessionId.length > 0;
+  return (
+    isRecord(value) &&
+    value['type'] === 'ACTIVATE_TAB' &&
+    isNonNegativeInteger(value['tabId']) &&
+    isNonEmptyString(value['sessionId'])
+  );
 }
 
 export function isCloseSwitcherSessionMessage(
   value: unknown,
 ): value is CloseSwitcherSessionMessage {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (value['type'] !== 'CLOSE_SWITCHER_SESSION') {
-    return false;
-  }
-
-  const sessionId = value['sessionId'];
-  return typeof sessionId === 'string' && sessionId.length > 0;
+  return (
+    isRecord(value) &&
+    value['type'] === 'CLOSE_SWITCHER_SESSION' &&
+    isNonEmptyString(value['sessionId'])
+  );
 }
 
 export function isFrameCloseMessage(value: unknown): value is FrameCloseMessage {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  if (value['type'] !== 'AVY_CLOSE_FRAME') {
-    return false;
-  }
-
-  const sessionId = value['sessionId'];
-  return typeof sessionId === 'string' && sessionId.length > 0;
+  return (
+    isRecord(value) && value['type'] === 'AVY_CLOSE_FRAME' && isNonEmptyString(value['sessionId'])
+  );
 }
 
 export function isFrameInitErrorMessage(value: unknown): value is FrameInitErrorMessage {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return value['type'] === 'AVY_FRAME_INIT_FAILED';
+  return isRecord(value) && value['type'] === 'AVY_FRAME_INIT_FAILED';
 }
 
 export function isActivateTabResult(value: unknown): value is ActivateTabResult {
@@ -242,26 +221,13 @@ export function isActivateTabResult(value: unknown): value is ActivateTabResult 
     return false;
   }
 
-  const keys = Object.keys(value);
-
   if (value['ok'] === true) {
-    return keys.length === 1 && keys[0] === 'ok';
+    return hasExactKeys(value, SUCCESS_RESULT_KEYS);
   }
 
-  if (value['ok'] === false) {
-    if (keys.length !== 2) {
-      return false;
-    }
-    if (!keys.includes('ok') || !keys.includes('reason')) {
-      return false;
-    }
+  if (value['ok'] === false && hasExactKeys(value, ACTIVATE_FAILURE_KEYS)) {
     const reason = value['reason'];
-    return (
-      reason === 'tab-unavailable' ||
-      reason === 'wrong-window' ||
-      reason === 'unauthorized' ||
-      reason === 'unexpected'
-    );
+    return typeof reason === 'string' && ACTIVATE_FAILURE_REASONS.has(reason);
   }
 
   return false;
