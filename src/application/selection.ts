@@ -1,17 +1,46 @@
 export type SelectionDirection = 'left' | 'right' | 'up' | 'down';
 
-// Breakpoints mirror switcher.css media queries (<=480px: 2, <=720px: 3, default: 5).
+const COMPACT_VIEWPORT_MAX_WIDTH = 480;
+const MEDIUM_VIEWPORT_MAX_WIDTH = 720;
+
 export function getGridColumnCount(viewportWidth: number): 2 | 3 | 5 {
   if (!Number.isFinite(viewportWidth) || viewportWidth < 0) {
     return 5;
   }
-  if (viewportWidth <= 480) {
+  if (viewportWidth <= COMPACT_VIEWPORT_MAX_WIDTH) {
     return 2;
   }
-  if (viewportWidth <= 720) {
+  if (viewportWidth <= MEDIUM_VIEWPORT_MAX_WIDTH) {
     return 3;
   }
   return 5;
+}
+
+function normalizeItemCount(itemCount: number): number {
+  if (!Number.isFinite(itemCount) || itemCount <= 0) {
+    return -1;
+  }
+
+  const total = Math.floor(itemCount);
+  return total > 0 ? total : -1;
+}
+
+function isValidIndex(currentIndex: number, total: number): boolean {
+  return Number.isInteger(currentIndex) && currentIndex >= 0 && currentIndex < total;
+}
+
+function normalizeColumnCount(columns: number): number {
+  return Number.isInteger(columns) && columns > 0 ? columns : 1;
+}
+
+function getDirectionOffset(direction: SelectionDirection, columns: number): number {
+  const offsets = {
+    left: -1,
+    right: 1,
+    up: -columns,
+    down: columns,
+  } satisfies Record<SelectionDirection, number>;
+  return offsets[direction];
 }
 
 export function moveSelection(
@@ -20,55 +49,27 @@ export function moveSelection(
   direction: SelectionDirection,
   columns: number,
 ): number {
-  if (!Number.isFinite(itemCount) || itemCount <= 0) {
-    return -1;
-  }
-
-  const total = Math.floor(itemCount);
+  const total = normalizeItemCount(itemCount);
   if (total <= 0) {
     return -1;
   }
 
-  if (
-    typeof currentIndex !== 'number' ||
-    !Number.isInteger(currentIndex) ||
-    currentIndex < 0 ||
-    currentIndex >= total
-  ) {
+  if (!isValidIndex(currentIndex, total)) {
     return 0;
   }
 
-  const safeColumns =
-    typeof columns === 'number' && Number.isInteger(columns) && columns > 0 ? columns : 1;
+  const safeColumns = normalizeColumnCount(columns);
+  const target = currentIndex + getDirectionOffset(direction, safeColumns);
 
-  const col = currentIndex % safeColumns;
-
-  switch (direction) {
-    case 'left': {
-      if (col > 0) {
-        return currentIndex - 1;
-      }
-      return currentIndex;
-    }
-    case 'right': {
-      if (col < safeColumns - 1 && currentIndex + 1 < total) {
-        return currentIndex + 1;
-      }
-      return currentIndex;
-    }
-    case 'up': {
-      const target = currentIndex - safeColumns;
-      if (target >= 0) {
-        return target;
-      }
-      return currentIndex;
-    }
-    case 'down': {
-      const target = currentIndex + safeColumns;
-      if (target < total) {
-        return target;
-      }
-      return currentIndex;
-    }
+  if (target < 0 || target >= total) {
+    return currentIndex;
   }
+
+  const isHorizontal = direction === 'left' || direction === 'right';
+  const isSameRow = Math.floor(target / safeColumns) === Math.floor(currentIndex / safeColumns);
+  if (isHorizontal && !isSameRow) {
+    return currentIndex;
+  }
+
+  return target;
 }
