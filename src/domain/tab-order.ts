@@ -12,25 +12,35 @@ export function normalizeTabLimit(limit: number): number {
   return Math.floor(limit);
 }
 
+interface IndexedTab {
+  readonly tab: SwitchableTab;
+  readonly originalIndex: number;
+}
+
 export function compareTabRecency(a: SwitchableTab, b: SwitchableTab): number {
   const recencyA = a.lastAccessed;
   const recencyB = b.lastAccessed;
 
-  if (isValidRecency(recencyA) && isValidRecency(recencyB)) {
+  if (isValidRecency(recencyA)) {
+    if (!isValidRecency(recencyB)) {
+      return -1;
+    }
     if (recencyB !== recencyA) {
       return recencyB - recencyA;
     }
-  } else if (isValidRecency(recencyA)) {
-    return -1;
   } else if (isValidRecency(recencyB)) {
     return 1;
   }
 
-  if (a.id !== b.id) {
-    return a.id - b.id;
-  }
+  return a.id - b.id;
+}
 
-  return 0;
+export function compareIndexedTabRecency(first: IndexedTab, second: IndexedTab): number {
+  const recencyDiff = compareTabRecency(first.tab, second.tab);
+  if (recencyDiff !== 0) {
+    return recencyDiff;
+  }
+  return first.originalIndex - second.originalIndex;
 }
 
 export function getRecentTabs(
@@ -43,18 +53,11 @@ export function getRecentTabs(
     return [];
   }
 
-  const candidates = tabs
+  const candidates: IndexedTab[] = tabs
     .map((tab, originalIndex) => ({ tab, originalIndex }))
     .filter(({ tab }) => currentTabId === null || tab.id !== currentTabId);
 
-  candidates.sort((first, second) => {
-    const recencyDiff = compareTabRecency(first.tab, second.tab);
-    if (recencyDiff !== 0) {
-      return recencyDiff;
-    }
-
-    return first.originalIndex - second.originalIndex;
-  });
+  candidates.sort(compareIndexedTabRecency);
 
   return candidates.slice(0, integerLimit).map(({ tab }) => tab);
 }

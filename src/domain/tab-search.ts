@@ -1,5 +1,5 @@
 import { MAX_QUICK_TABS, type SwitchableTab } from './tab';
-import { compareTabRecency, getRecentTabs, normalizeTabLimit } from './tab-order';
+import { compareIndexedTabRecency, getRecentTabs, normalizeTabLimit } from './tab-order';
 
 const enum MatchQuality {
   Exact = 0,
@@ -43,12 +43,9 @@ function getFieldMatchQuality(field: string, query: string): MatchQuality {
     return MatchQuality.WholeFieldPrefix;
   }
   const words = field.split(/[^a-zA-Z0-9]+/).filter((w) => w.length > 0);
-  if (words.length > 1) {
-    for (let i = 1; i < words.length; i++) {
-      const word = words[i];
-      if (word && word.startsWith(query)) {
-        return MatchQuality.WordPrefix;
-      }
+  for (const word of words.slice(1)) {
+    if (word.startsWith(query)) {
+      return MatchQuality.WordPrefix;
     }
   }
   if (field.includes(query)) {
@@ -73,7 +70,6 @@ function getBestMatch(tab: SwitchableTab, query: string): BestMatch | null {
     if (quality === MatchQuality.NoMatch) {
       continue;
     }
-    // Fields are checked in Title > Hostname order; earlier fields win ties
     if (best === null || quality < best.quality) {
       best = { quality, fieldPriority: priority };
     }
@@ -122,12 +118,7 @@ export function searchTabs(
       return first.match.fieldPriority - second.match.fieldPriority;
     }
 
-    const recencyDiff = compareTabRecency(first.tab, second.tab);
-    if (recencyDiff !== 0) {
-      return recencyDiff;
-    }
-
-    return first.originalIndex - second.originalIndex;
+    return compareIndexedTabRecency(first, second);
   });
 
   return candidates.slice(0, integerLimit).map(({ tab }) => tab);
