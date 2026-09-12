@@ -190,12 +190,98 @@ function consumeEvent(event: KeyboardEvent): void {
   event.stopImmediatePropagation();
 }
 
-function onKeydown(event: KeyboardEvent): void {
-  if (!props.open) {
+function shouldIgnoreKeydown(open: boolean, event: KeyboardEvent): boolean {
+  return !open || event.isComposing || event.ctrlKey || event.metaKey || event.altKey;
+}
+
+function handleEscapeKey(event: KeyboardEvent): void {
+  consumeEvent(event);
+  if (mode.value === 'search') {
+    exitSearch();
     return;
   }
 
-  if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) {
+  queueAction({
+    type: 'close',
+    code: event.code || 'Escape',
+    key: event.key,
+  });
+}
+
+function handleEnterKey(event: KeyboardEvent): void {
+  consumeEvent(event);
+  const item = displayedItems.value[selectedIndex.value];
+  if (!item) {
+    return;
+  }
+  queueAction({
+    type: 'activate',
+    tabId: item.tab.id,
+    code: event.code || 'Enter',
+    key: event.key,
+  });
+}
+
+function handleDirectionKey(event: KeyboardEvent, direction: SelectionDirection): void {
+  consumeEvent(event);
+  selectedIndex.value = moveSelection(
+    selectedIndex.value,
+    displayedItems.value.length,
+    direction,
+    getGridColumnCount(window.innerWidth),
+  );
+}
+
+function handleKnownKey(event: KeyboardEvent): boolean {
+  if (event.key === 'Escape') {
+    handleEscapeKey(event);
+    return true;
+  }
+
+  if (mode.value === 'quick' && event.key === '/') {
+    consumeEvent(event);
+    enterSearch();
+    return true;
+  }
+
+  if (event.key === 'Enter') {
+    handleEnterKey(event);
+    return true;
+  }
+
+  const direction = getDirection(event.key);
+  if (direction !== null) {
+    handleDirectionKey(event, direction);
+    return true;
+  }
+
+  return false;
+}
+
+function handleMnemonicKey(event: KeyboardEvent): void {
+  if (mode.value !== 'quick' || !/^[a-zA-Z]$/.test(event.key)) {
+    return;
+  }
+
+  const keyLower = event.key.toLowerCase();
+  const matched = displayedItems.value.find(
+    (item) => item.hint !== null && item.hint.toLowerCase() === keyLower,
+  );
+  if (!matched) {
+    return;
+  }
+
+  consumeEvent(event);
+  queueAction({
+    type: 'activate',
+    tabId: matched.tab.id,
+    code: event.code || `Key${keyLower.toUpperCase()}`,
+    key: event.key,
+  });
+}
+
+function onKeydown(event: KeyboardEvent): void {
+  if (shouldIgnoreKeydown(props.open, event)) {
     return;
   }
 
@@ -204,69 +290,11 @@ function onKeydown(event: KeyboardEvent): void {
     return;
   }
 
-  if (event.key === 'Escape') {
-    consumeEvent(event);
-    if (mode.value === 'search') {
-      exitSearch();
-    } else {
-      queueAction({
-        type: 'close',
-        code: event.code || 'Escape',
-        key: event.key,
-      });
-    }
+  if (handleKnownKey(event)) {
     return;
   }
 
-  if (mode.value === 'quick' && event.key === '/') {
-    consumeEvent(event);
-    enterSearch();
-    return;
-  }
-
-  if (event.key === 'Enter') {
-    consumeEvent(event);
-    if (selectedIndex.value >= 0 && selectedIndex.value < displayedItems.value.length) {
-      const item = displayedItems.value[selectedIndex.value];
-      if (item) {
-        queueAction({
-          type: 'activate',
-          tabId: item.tab.id,
-          code: event.code || 'Enter',
-          key: event.key,
-        });
-      }
-    }
-    return;
-  }
-
-  const direction = getDirection(event.key);
-  if (direction !== null) {
-    consumeEvent(event);
-    selectedIndex.value = moveSelection(
-      selectedIndex.value,
-      displayedItems.value.length,
-      direction,
-      getGridColumnCount(window.innerWidth),
-    );
-    return;
-  }
-
-  if (mode.value === 'quick' && /^[a-zA-Z]$/.test(event.key)) {
-    const keyLower = event.key.toLowerCase();
-    const matched = displayedItems.value.find(
-      (item) => item.hint !== null && item.hint.toLowerCase() === keyLower,
-    );
-    if (matched) {
-      consumeEvent(event);
-      queueAction({
-        type: 'activate',
-        tabId: matched.tab.id,
-        code: event.code || `Key${keyLower.toUpperCase()}`,
-        key: event.key,
-      });
-    }
-  }
+  handleMnemonicKey(event);
 }
 
 function onKeyup(event: KeyboardEvent): void {

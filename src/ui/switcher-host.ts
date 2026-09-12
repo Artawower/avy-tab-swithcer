@@ -8,7 +8,7 @@ export function getDeepActiveElement(root: Document | ShadowRoot = document): El
   return current;
 }
 
-export interface SwitcherHostController {
+interface SwitcherHostController {
   readonly host: HTMLElement;
   readonly shadow: ShadowRoot;
   readonly iframe: HTMLIFrameElement;
