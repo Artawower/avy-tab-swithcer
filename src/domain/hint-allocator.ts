@@ -1,6 +1,6 @@
 import { MAX_QUICK_TABS, type SwitchableTab, getTabLabel } from './tab';
 
-export interface HintedTab {
+interface HintedTab {
   readonly tab: SwitchableTab;
   readonly hint: string;
   readonly hintIndex: number | null;
@@ -26,69 +26,65 @@ function findAsciiCaseInsensitiveIndex(text: string, letter: string): number | n
   return null;
 }
 
-function getTabCandidates(tab: SwitchableTab): readonly string[] {
-  const candidates: string[] = [];
-
-  function addCandidate(ch: string | undefined): void {
+function findFirstAsciiLetter(text: string): string | null {
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
     if (ch && isAsciiLetter(ch)) {
-      const lower = ch.toLowerCase();
-      if (!candidates.includes(lower)) {
-        candidates.push(lower);
-      }
+      return ch;
     }
   }
+  return null;
+}
 
-  for (let i = 0; i < tab.title.length; i++) {
-    const ch = tab.title[i];
-    if (ch && isAsciiLetter(ch)) {
-      addCandidate(ch);
-      break;
-    }
+function appendUniqueAsciiCandidate(candidates: string[], ch: string | null | undefined): void {
+  if (!ch || !isAsciiLetter(ch)) {
+    return;
   }
-
-  const words = tab.title.split(/[^a-zA-Z0-9]+/);
-  for (const word of words) {
-    for (let i = 0; i < word.length; i++) {
-      const ch = word[i];
-      if (ch && isAsciiLetter(ch)) {
-        addCandidate(ch);
-        break;
-      }
-    }
+  const lower = ch.toLowerCase();
+  if (!candidates.includes(lower)) {
+    candidates.push(lower);
   }
+}
 
-  const host = tab.hostname.trim().toLowerCase();
+function extractMeaningfulHostnameLabels(hostname: string): readonly string[] {
+  const host = hostname.trim().toLowerCase();
   const rawLabels = host
     .split('.')
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  let meaningfulLabels = rawLabels;
-  // Exclude leading 'www' and trailing TLD so domain/subdomain names take mnemonic precedence.
-  if (meaningfulLabels.length > 0 && meaningfulLabels[0] === 'www') {
-    meaningfulLabels = meaningfulLabels.slice(1);
-  }
-  if (meaningfulLabels.length > 1) {
-    meaningfulLabels = meaningfulLabels.slice(0, -1);
-  }
-  for (const label of meaningfulLabels) {
-    for (let i = 0; i < label.length; i++) {
-      const ch = label[i];
-      if (ch && isAsciiLetter(ch)) {
-        addCandidate(ch);
-        break;
-      }
-    }
-  }
 
+  let labels = rawLabels;
+  if (labels.length > 0 && labels[0] === 'www') {
+    labels = labels.slice(1);
+  }
+  if (labels.length > 1) {
+    labels = labels.slice(0, -1);
+  }
+  return labels;
+}
+
+function getTabCandidates(tab: SwitchableTab): readonly string[] {
+  const candidates: string[] = [];
+  const append = (ch: string | null | undefined): void => {
+    appendUniqueAsciiCandidate(candidates, ch);
+  };
+
+  append(findFirstAsciiLetter(tab.title));
+
+  for (const word of tab.title.split(/[^a-zA-Z0-9]+/)) {
+    append(findFirstAsciiLetter(word));
+  }
+  for (const label of extractMeaningfulHostnameLabels(tab.hostname)) {
+    append(findFirstAsciiLetter(label));
+  }
   for (let i = 0; i < tab.title.length; i++) {
-    addCandidate(tab.title[i]);
+    append(tab.title[i]);
   }
   for (let i = 0; i < tab.hostname.length; i++) {
-    addCandidate(tab.hostname[i]);
+    append(tab.hostname[i]);
   }
-
   for (let i = 0; i < ALPHABET.length; i++) {
-    addCandidate(ALPHABET[i]);
+    append(ALPHABET[i]);
   }
 
   return candidates;
