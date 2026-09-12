@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - master
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,13 +30,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Run quality checks
-        run: just check
+        run: pnpm check
 
   e2e:
     needs: quality
@@ -53,8 +52,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -62,4 +59,15 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: just e2e
+        run: pnpm e2e
+
+  release:
+    if: >-
+      github.event_name == 'push' &&
+      github.ref_name == github.event.repository.default_branch
+    needs:
+      - quality
+      - e2e
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
