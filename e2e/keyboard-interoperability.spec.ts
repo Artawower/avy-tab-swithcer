@@ -118,7 +118,7 @@ test('Keyboard interoperability: isolated frame intercepts keystrokes, cancels l
 
   const tileHint = await reopenFrame
     .locator('.tab-tile', { hasText: 'Second Page' })
-    .locator('mark.tab-tile__hint-char')
+    .locator('.tab-tile__keycap')
     .textContent();
   expect(tileHint).toBeTruthy();
   const hintChar = (tileHint ?? '').trim();
@@ -160,7 +160,7 @@ test('Keyboard interoperability: isolated frame intercepts keystrokes, cancels l
 
   const upperTileHint = await reopenUpperFrame
     .locator('.tab-tile', { hasText: 'Second Page' })
-    .locator('mark.tab-tile__hint-char')
+    .locator('.tab-tile__keycap')
     .textContent();
   expect(upperTileHint).toBeTruthy();
   const upperHintChar = (upperTileHint ?? '').trim();

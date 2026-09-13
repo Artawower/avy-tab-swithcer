@@ -315,6 +315,7 @@
 }
 
 .tab-tile {
+  position: relative;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--avy-radius-sm);
@@ -371,6 +372,7 @@
 }
 
 .tab-tile__icon-box {
+  position: relative;
   width: 52px;
   height: 52px;
   border-radius: 12px;
@@ -384,7 +386,6 @@
   justify-content: center;
   margin-bottom: 8px;
   flex-shrink: 0;
-  overflow: hidden;
   transition:
     transform 0.14s ease,
     box-shadow 0.14s ease;
@@ -439,19 +440,28 @@
   text-underline-offset: 2px;
 }
 
-.tab-tile__hint-badge {
+.tab-tile__keycap {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 17px;
+  height: 17px;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 1px 5px;
   font-size: 10px;
   font-weight: 700;
-  border-radius: 4px;
-  background: var(--avy-accent);
+  line-height: 1;
+  text-transform: uppercase;
   color: #ffffff;
-  flex-shrink: 0;
-  line-height: 1.2;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  background: var(--avy-accent);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 1.5px var(--avy-bg-surface),
+    0 1px 3px rgba(0, 0, 0, 0.25);
+  user-select: none;
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

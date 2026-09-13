@@ -33,11 +33,34 @@ test('TabTile renders exact marked mnemonic character when hintIndex is valid', 
   expect(mark.exists()).toBe(true);
   expect(mark.text()).toBe('H');
   expect(wrapper.find('.tab-tile__title').text()).toBe('GitHub');
-  expect(wrapper.find('.tab-tile__hint-badge').exists()).toBe(false);
+  const keycap = wrapper.find('.tab-tile__keycap');
+  expect(keycap.exists()).toBe(true);
+  expect(keycap.text()).toBe('h');
   expect(wrapper.find('button').attributes('aria-label')).toBe('GitHub (key: h)');
 });
 
-test('TabTile renders separate badge when hint is chosen but absent from label', () => {
+test('TabTile highlights the hint deep inside a long clamped title without altering the text', () => {
+  const longTitle =
+    'An extremely long tab title that keeps going with many words so the layout clamps it eventually';
+  const tab = createTab({ id: 1, title: longTitle, hostname: 'example.com' });
+  const hintIndex = longTitle.indexOf('w');
+  const wrapper = mount(TabTile, {
+    props: {
+      tab,
+      selected: false,
+      hint: 'w',
+      hintIndex,
+    },
+  });
+
+  const mark = wrapper.find('mark.tab-tile__hint-char');
+  expect(mark.exists()).toBe(true);
+  expect(mark.text()).toBe('w');
+  expect(wrapper.find('.tab-tile__title').text()).toBe(longTitle);
+  expect(wrapper.find('.tab-tile__keycap').text()).toBe('w');
+});
+
+test('TabTile renders only the card-level keycap when hint is absent from the label', () => {
   const tab = createTab({ id: 1, title: 'Inbox', hostname: 'mail.com' });
   const wrapper = mount(TabTile, {
     props: {
@@ -49,13 +72,15 @@ test('TabTile renders separate badge when hint is chosen but absent from label',
   });
 
   expect(wrapper.find('mark.tab-tile__hint-char').exists()).toBe(false);
-  const badge = wrapper.find('.tab-tile__hint-badge');
-  expect(badge.exists()).toBe(true);
-  expect(badge.text()).toBe('z');
+  expect(wrapper.find('.tab-tile__title').text()).toBe('Inbox');
+  const keycap = wrapper.find('.tab-tile__keycap');
+  expect(keycap.exists()).toBe(true);
+  expect(keycap.text()).toBe('z');
+  expect(wrapper.find('.tab-tile__icon-box .tab-tile__keycap').exists()).toBe(true);
   expect(wrapper.find('button').attributes('aria-label')).toBe('Inbox (key: z)');
 });
 
-test('TabTile does not render hint badge or highlight when hint is null', () => {
+test('TabTile renders neither inline highlight nor keycap when hint is null', () => {
   const tab = createTab({ id: 1, title: 'Search Result', hostname: 'search.com' });
   const wrapper = mount(TabTile, {
     props: {
@@ -67,7 +92,7 @@ test('TabTile does not render hint badge or highlight when hint is null', () => 
   });
 
   expect(wrapper.find('mark.tab-tile__hint-char').exists()).toBe(false);
-  expect(wrapper.find('.tab-tile__hint-badge').exists()).toBe(false);
+  expect(wrapper.find('.tab-tile__keycap').exists()).toBe(false);
   expect(wrapper.find('button').attributes('aria-label')).toBe('Search Result');
 });
 

@@ -48,10 +48,6 @@ const titleParts = computed(() => {
   };
 });
 
-const showSeparateBadge = computed(() => {
-  return props.hint !== null && props.hintIndex === null;
-});
-
 const accessibleLabel = computed(() => {
   if (props.hint) {
     return `${label.value} (key: ${props.hint})`;
@@ -84,6 +80,7 @@ function onClick() {
       <span v-else class="tab-tile__fallback" aria-hidden="true">
         {{ fallbackChar }}
       </span>
+      <span v-if="hint" class="tab-tile__keycap" aria-hidden="true">{{ hint }}</span>
     </div>
 
     <div class="tab-tile__title-wrap">
@@ -96,9 +93,6 @@ function onClick() {
         <template v-else>
           {{ titleParts.prefix }}
         </template>
-      </span>
-      <span v-if="showSeparateBadge" class="tab-tile__hint-badge" aria-hidden="true">
-        {{ hint }}
       </span>
     </div>
   </button>

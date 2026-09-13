@@ -96,10 +96,8 @@ test('Switcher assigns unique visible hints in quick mode', () => {
   const tiles = wrapper.findAll('.tab-tile');
   const hints = tiles
     .map((t) => {
-      const mark = t.find('mark.tab-tile__hint-char');
-      if (mark.exists()) return mark.text().toLowerCase();
-      const badge = t.find('.tab-tile__hint-badge');
-      if (badge.exists()) return badge.text().toLowerCase();
+      const keycap = t.find('.tab-tile__keycap');
+      if (keycap.exists()) return keycap.text().toLowerCase();
       return null;
     })
     .filter((h): h is string => h !== null);
@@ -152,8 +150,8 @@ test('Switcher finds a tab outside quick 10 in search mode and uses same tile gr
   expect(tiles).toHaveLength(1);
   expect(tiles[0]?.text()).toContain('Needle');
   expect(tiles[0]?.classes()).toContain('tab-tile--selected');
-  expect(tiles[0]?.find('.tab-tile__hint-badge').exists()).toBe(false);
   expect(tiles[0]?.find('mark.tab-tile__hint-char').exists()).toBe(false);
+  expect(tiles[0]?.find('.tab-tile__keycap').exists()).toBe(false);
 });
 
 test('search mode renders all matches when >10 and returns to 10 unhinted tiles when cleared', async () => {
@@ -172,9 +170,7 @@ test('search mode renders all matches when >10 and returns to 10 unhinted tiles 
   // 1. Quick mode is capped at 10 and has hints
   let tiles = wrapper.findAll('.tab-tile');
   expect(tiles).toHaveLength(10);
-  const quickHints = tiles.map((t) =>
-    t.find('.tab-tile__hint-badge, mark.tab-tile__hint-char').exists(),
-  );
+  const quickHints = tiles.map((t) => t.find('.tab-tile__keycap').exists());
   expect(quickHints.some((hasHint) => hasHint)).toBe(true);
 
   // 2. Enter search mode and type non-empty search matching all 15 tabs
@@ -186,8 +182,8 @@ test('search mode renders all matches when >10 and returns to 10 unhinted tiles 
   tiles = wrapper.findAll('.tab-tile');
   expect(tiles).toHaveLength(15);
   for (const tile of tiles) {
-    expect(tile.find('.tab-tile__hint-badge').exists()).toBe(false);
     expect(tile.find('mark.tab-tile__hint-char').exists()).toBe(false);
+    expect(tile.find('.tab-tile__keycap').exists()).toBe(false);
   }
 
   // 3. Clear search query (empty string)
@@ -201,8 +197,8 @@ test('search mode renders all matches when >10 and returns to 10 unhinted tiles 
   expect(tiles).toHaveLength(10);
   expect(tiles[0]?.text()).toContain('Tab 15');
   for (const tile of tiles) {
-    expect(tile.find('.tab-tile__hint-badge').exists()).toBe(false);
     expect(tile.find('mark.tab-tile__hint-char').exists()).toBe(false);
+    expect(tile.find('.tab-tile__keycap').exists()).toBe(false);
   }
 
   // Whitespace-only query also preserves search mode with top 10 MRU and no hints
@@ -210,8 +206,8 @@ test('search mode renders all matches when >10 and returns to 10 unhinted tiles 
   tiles = wrapper.findAll('.tab-tile');
   expect(tiles).toHaveLength(10);
   for (const tile of tiles) {
-    expect(tile.find('.tab-tile__hint-badge').exists()).toBe(false);
     expect(tile.find('mark.tab-tile__hint-char').exists()).toBe(false);
+    expect(tile.find('.tab-tile__keycap').exists()).toBe(false);
   }
 });
 
@@ -656,10 +652,8 @@ test('uppercase and lowercase mnemonic activates immediately; mnemonic miss does
 
   const tiles = wrapper.findAll('.tab-tile');
   const getHint = (el: (typeof tiles)[number]): string | null => {
-    const mark = el.find('mark.tab-tile__hint-char');
-    if (mark.exists()) return mark.text();
-    const badge = el.find('.tab-tile__hint-badge');
-    if (badge.exists()) return badge.text();
+    const keycap = el.find('.tab-tile__keycap');
+    if (keycap.exists()) return keycap.text();
     return null;
   };
   const firstTile = tiles[0];
@@ -918,7 +912,7 @@ test('holding mnemonic beyond timeout cancels action without activate, consumes 
     });
 
     const tile = wrapper.find('.tab-tile');
-    const hint = tile.find('.tab-tile__hint-char').text().toLowerCase();
+    const hint = tile.find('.tab-tile__keycap').text().toLowerCase();
 
     dispatchKey(hint, { code: `Key${hint.toUpperCase()}` });
     dispatchKey(hint, { code: `Key${hint.toUpperCase()}`, repeat: true });
