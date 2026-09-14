@@ -2,122 +2,59 @@ name: Publish release
 
 on:
   workflow_call:
-
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+    secrets:
+      CHROME_EXTENSION_ID:
+        required: true
+      CHROME_PUBLISHER_ID:
+        required: true
+      CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL:
+        required: true
+      CHROME_SERVICE_ACCOUNT_PRIVATE_KEY:
+        required: true
 
 jobs:
-  release:
+  publish:
+    runs-on: ubuntu-latest
+
     permissions:
       contents: write
-    runs-on: ubuntu-latest
-    env:
-      RELEASE_SHA: ${{ github.sha }}
+
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ env.RELEASE_SHA }}
-          persist-credentials: false
+      - uses: actions/checkout@v6
 
-      - name: Determine release version
-        id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
+      - uses: pnpm/action-setup@v4
 
-          version=$(node -p 'require("./package.json").version')
-          node -e '
-            const version = process.argv[1];
-            const pattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
-            if (!pattern.test(version)) {
-              console.error(`Invalid extension version: ${version}`);
-              process.exit(1);
-            }
-          ' "$version"
-
-          tag="v$version"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-          if gh release view "$tag" \
-            --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1
-          then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "Release $tag already exists; nothing to publish."
-            exit 0
-          fi
-
-          if gh api --silent \
-            "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" >/dev/null 2>&1
-          then
-            echo "Tag $tag exists without a release; refusing to reuse it." >&2
-            exit 1
-          fi
-
-          echo "publish=true" >> "$GITHUB_OUTPUT"
-          echo "Preparing release $tag from $RELEASE_SHA."
-
-      - if: steps.release.outputs.publish == 'true'
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-
-      - if: steps.release.outputs.publish == 'true'
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
-      - name: Install dependencies
-        if: steps.release.outputs.publish == 'true'
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
-      - name: Build Chrome and Firefox packages
-        if: steps.release.outputs.publish == 'true'
+      - name: Build extension
         run: pnpm package
 
-      - name: Verify release packages
-        if: steps.release.outputs.publish == 'true'
+      - name: Submit to Chrome Web Store
         env:
-          VERSION: ${{ steps.release.outputs.version }}
+          CHROME_API_VERSION: v2
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}
         run: |
-          set -euo pipefail
+          VERSION=$(node -p 'require("./package.json").version')
 
-          for target in chrome firefox sources; do
-            test -f ".output/avy-tab-switcher-$VERSION-$target.zip"
-          done
+          pnpm exec wxt submit \
+            --chrome-zip ".output/avy-tab-switcher-$VERSION-chrome.zip"
 
-          node <<'NODE'
-          const { readFileSync } = require('node:fs');
-          const expected = process.env.VERSION;
-
-          for (const browser of ['chrome', 'firefox']) {
-            const manifest = JSON.parse(
-              readFileSync(`.output/${browser}-mv3/manifest.json`, 'utf8'),
-            );
-            if (manifest.version !== expected) {
-              const actual = manifest.version;
-              throw new Error(
-                `${browser} manifest version ${actual} ` +
-                  `does not match ${expected}`,
-              );
-            }
-          }
-          NODE
-
-      - name: Publish GitHub release
-        if: steps.release.outputs.publish == 'true'
+      - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-          VERSION: ${{ steps.release.outputs.version }}
         run: |
-          gh release create "$TAG" \
+          VERSION=$(node -p 'require("./package.json").version')
+
+          gh release create "v$VERSION" \
             ".output/avy-tab-switcher-$VERSION-chrome.zip" \
             ".output/avy-tab-switcher-$VERSION-firefox.zip" \
             ".output/avy-tab-switcher-$VERSION-sources.zip" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$RELEASE_SHA" \
-            --title "Avy Tab Switcher $TAG" \
             --generate-notes
