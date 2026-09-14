@@ -121,3 +121,43 @@ jobs:
             --target "$RELEASE_SHA" \
             --title "Avy Tab Switcher $TAG" \
             --generate-notes
+
+      - name: Validate Chrome Web Store secrets
+        if: steps.release.outputs.publish == 'true'
+        env:
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          for name in \
+            CHROME_EXTENSION_ID \
+            CHROME_PUBLISHER_ID \
+            CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL \
+            CHROME_SERVICE_ACCOUNT_PRIVATE_KEY
+          do
+            value="${!name}"
+
+            if [ -z "$value" ]; then
+              echo "::error::$name is empty or unavailable"
+              exit 1
+            fi
+
+            echo "$name: OK (${#value} chars)"
+          done
+
+      - name: Submit to Chrome Web Store
+        if: steps.release.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+
+          CHROME_API_VERSION: v2
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}
+
+        run: |
+          pnpm exec wxt submit \
+            --chrome-zip ".output/avy-tab-switcher-$VERSION-chrome.zip"
