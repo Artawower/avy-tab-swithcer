@@ -121,3 +121,16 @@ jobs:
             --target "$RELEASE_SHA" \
             --title "Avy Tab Switcher $TAG" \
             --generate-notes
+
+      - name: Submit to Chrome Web Store
+        if: steps.release.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          pnpm exec wxt submit \
+            --chrome-api-version v2 \
+            --chrome-zip ".output/avy-tab-switcher-$VERSION-chrome.zip" \
+            --chrome-extension-id "${{ secrets.CHROME_EXTENSION_ID }}" \
+            --chrome-publisher-id "${{ secrets.CHROME_PUBLISHER_ID }}" \
+            --chrome-service-account-client-email "${{ secrets.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}" \
+            --chrome-service-account-private-key "${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}"
