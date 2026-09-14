@@ -1,15 +1,21 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
+  findCharIndexCaseInsensitive,
+  isLatinLetterKey,
+  letterFromKeyCode,
+} from '../application/keyboard-layout';
+import {
   getGridColumnCount,
   moveSelection,
   type SelectionDirection,
 } from '../application/selection';
 import { allocateTabHints } from '../domain/hint-allocator';
-import { MAX_QUICK_TABS, type SwitchableTab } from '../domain/tab';
+import { getTabLabel, MAX_QUICK_TABS, type SwitchableTab } from '../domain/tab';
 import { getRecentTabs } from '../domain/tab-order';
 import { searchTabs } from '../domain/tab-search';
 import TabTile from './TabTile.vue';
+import { useHintDisplayMap } from './use-keyboard-layout';
 
 interface Props {
   readonly open: boolean;
@@ -55,6 +61,37 @@ const displayedItems = computed<readonly DisplayItem[]>(() => {
     hintIndex: null,
   }));
 });
+
+const hintDisplayMap = useHintDisplayMap();
+
+function displayHintFor(hint: string): string {
+  return hintDisplayMap.value.get(hint) ?? hint;
+}
+
+interface TileItem {
+  readonly tab: SwitchableTab;
+  readonly hint: string | null;
+  readonly hintIndex: number | null;
+}
+
+/**
+ * View model for tiles: the internal Latin hint identity stays on
+ * `displayedItems` for matching, while tiles render the character produced by
+ * the user's current keyboard layout (falling back to the Latin letter).
+ */
+const tileItems = computed<readonly TileItem[]>(() =>
+  displayedItems.value.map((item) => {
+    if (item.hint === null) {
+      return { tab: item.tab, hint: null, hintIndex: null };
+    }
+    const displayHint = displayHintFor(item.hint);
+    const hintIndex =
+      displayHint.toLowerCase() === item.hint.toLowerCase()
+        ? item.hintIndex
+        : findCharIndexCaseInsensitive(getTabLabel(item.tab), displayHint);
+    return { tab: item.tab, hint: displayHint, hintIndex };
+  }),
+);
 
 type PendingAction =
   | { readonly type: 'close'; readonly code: string; readonly key: string }
@@ -259,15 +296,31 @@ function handleKnownKey(event: KeyboardEvent): boolean {
 }
 
 function handleMnemonicKey(event: KeyboardEvent): void {
-  if (mode.value !== 'quick' || !/^[a-zA-Z]$/.test(event.key)) {
+  if (mode.value !== 'quick') {
     return;
   }
 
-  const keyLower = event.key.toLowerCase();
-  const matched = displayedItems.value.find(
-    (item) => item.hint !== null && item.hint.toLowerCase() === keyLower,
-  );
-  if (!matched) {
+  // 1. Match against the displayed character — this is exactly what the user
+  // sees on the tile, so it stays consistent for any keyboard layout.
+  let matched: DisplayItem | undefined;
+  if (event.key.length === 1) {
+    const pressedLower = event.key.toLowerCase();
+    matched = displayedItems.value.find(
+      (item) => item.hint !== null && displayHintFor(item.hint).toLowerCase() === pressedLower,
+    );
+  }
+
+  // 2. Fallback for non-Latin layouts without a display map (e.g. Cyrillic on
+  // Firefox): resolve the physical key position to its hint identity. Guarded
+  // to non-Latin keys so Latin layouts keep the safe no-op on unassigned keys.
+  if (!matched && !isLatinLetterKey(event.key)) {
+    const letter = letterFromKeyCode(event.code);
+    if (letter !== null) {
+      matched = displayedItems.value.find((item) => item.hint === letter);
+    }
+  }
+
+  if (!matched || matched.hint === null) {
     return;
   }
 
@@ -275,7 +328,7 @@ function handleMnemonicKey(event: KeyboardEvent): void {
   queueAction({
     type: 'activate',
     tabId: matched.tab.id,
-    code: event.code || `Key${keyLower.toUpperCase()}`,
+    code: event.code || `Key${matched.hint.toUpperCase()}`,
     key: event.key,
   });
 }
@@ -408,7 +461,7 @@ function onBackdropClick(event: MouseEvent): void {
       <div ref="viewportRef" class="switcher-grid-viewport">
         <div v-if="displayedItems.length > 0" class="switcher-grid">
           <TabTile
-            v-for="(item, index) in displayedItems"
+            v-for="(item, index) in tileItems"
             :key="item.tab.id"
             :tab="item.tab"
             :selected="index === selectedIndex"
