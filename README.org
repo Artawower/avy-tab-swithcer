@@ -8,6 +8,11 @@
 #+HTML: <img src="./images/logo.png" width="180" alt="Avy Tab Switcher">
 #+HTML: </p>
 
+#+HTML: <p align="center">
+#+HTML: <a href="https://chromewebstore.google.com/detail/avy-tab-switcher/liliapojfplmhajbmabgghihdifbhmep">
+#+HTML:   <img src="https://img.shields.io/badge/Chrome_Web_Store-Install-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Install Avy Tab Switcher from the Chrome Web Store">
+#+HTML: </a>
+#+HTML: </p>
 
 #+HTML: <p align="center">
 #+HTML: <a href="https://www.paypal.me/darkawower"><img src="https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="PayPal"></a>
@@ -17,30 +22,64 @@
 
 * Introduction
 
-*Avy Tab Switcher* is a keyboard-first visual tab switcher for Chrome, other Chromium-based browsers, and Firefox. Press ~Alt+Q~ to open your most recently used tabs, then switch with a single mnemonic key, the arrow keys, or search.
+*Avy Tab Switcher* is a keyboard-first visual tab switcher for Chrome, other Chromium-based browsers, and Firefox.
+
+Press ~Alt+Q~ to open your most recently used tabs, then switch instantly using a mnemonic key, the arrow keys, or search.
 
 #+HTML: <p align="center">
-#+HTML: <img src="./images/screenshot.png" width="900" alt="Avy Tab Switcher showing recently used tabs">
+#+HTML: <img src="./images/pick-dark-preview.png" width="900" alt="Avy Tab Switcher showing recently used tabs">
 #+HTML: </p>
 
-The active tab is excluded, quick mode shows up to ten recent tabs, and search covers every matching tab in the current window. Everything runs locally without analytics or telemetry.
+The active tab is excluded, quick mode shows up to ten recent tabs, and search covers every matching tab in the current window.
 
+Everything runs locally. Avy Tab Switcher does not use analytics, telemetry, or external services.
 
 * Install
 
-Download and extract the package for your browser from [[https://github.com/artawower/avy-tab-switcher/releases][GitHub Releases]].
+** Chrome and Chromium-based browsers
 
-** Chrome and other Chromium-based browsers
+The recommended way to install Avy Tab Switcher is from the Chrome Web Store:
 
-1. Open ~chrome://extensions~.
-2. Enable *Developer mode*.
-3. Choose *Load unpacked* and select the extracted Chrome package.
+[[https://chromewebstore.google.com/detail/avy-tab-switcher/liliapojfplmhajbmabgghihdifbhmep][Install Avy Tab Switcher from the Chrome Web Store]]
+
+1. Open the Chrome Web Store link above.
+2. Click *Add to Chrome*.
+3. Confirm the installation.
+4. Press ~Alt+Q~ to open Avy Tab Switcher.
+
+You can change the keyboard shortcut at:
+
+~chrome://extensions/shortcuts~
 
 ** Firefox
 
-1. Open ~about:debugging#/runtime/this-firefox~.
-2. Choose *Load Temporary Add-on...*.
-3. Select ~manifest.json~ from the extracted Firefox package.
+Until a Firefox Add-ons release is available, install the Firefox build manually from [[https://github.com/artawower/avy-tab-switcher/releases][GitHub Releases]].
+
+1. Download and extract the Firefox package from the latest release.
+2. Open ~about:debugging#/runtime/this-firefox~.
+3. Choose *Load Temporary Add-on...*.
+4. Select ~manifest.json~ from the extracted Firefox package.
+
+Note that temporary Firefox add-ons are removed when Firefox is restarted.
+
+** Manual / development installation
+
+Prebuilt packages are also available from [[https://github.com/artawower/avy-tab-switcher/releases][GitHub Releases]].
+
+*** Chrome / Chromium
+
+1. Download and extract the Chrome package.
+2. Open ~chrome://extensions~.
+3. Enable *Developer mode*.
+4. Choose *Load unpacked*.
+5. Select the extracted Chrome extension directory.
+
+*** Firefox
+
+1. Download and extract the Firefox package.
+2. Open ~about:debugging#/runtime/this-firefox~.
+3. Choose *Load Temporary Add-on...*.
+4. Select ~manifest.json~ from the extracted Firefox package.
 
 * Usage
 
@@ -55,10 +94,15 @@ Download and extract the package for your browser from [[https://github.com/arta
 | Click a tab         | Switch to it                                   |
 | Click outside / ~×~ | Close the switcher and restore the prior focus |
 
-Change the shortcut from ~chrome://extensions/shortcuts~ in Chromium or from *Manage Extension Shortcuts* in Firefox's add-on settings.
+To change the shortcut:
+
+- Chromium: open ~chrome://extensions/shortcuts~.
+- Firefox: open the extension settings and choose *Manage Extension Shortcuts*.
 
 * 🍩 Contribute guide
 
-Any contribution is very much appreciated! Please use the [[https://github.com/artawower/avy-tab-switcher/issues][issue tracker]] for bug reports and suggestions, or open a focused pull request.
+Any contribution is very much appreciated!
+
+Please use the [[https://github.com/artawower/avy-tab-switcher/issues][issue tracker]] for bug reports and suggestions, or open a focused pull request.
 
 I would also appreciate it if you would consider supporting my work via [[https://ko-fi.com/artawower][Ko-fi]], [[https://www.paypal.me/darkawower][PayPal]], or becoming my [[https://www.patreon.com/artawower][patron]].

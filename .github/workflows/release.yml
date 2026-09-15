@@ -34,18 +34,25 @@ jobs:
       - name: Build extension
         run: pnpm package
 
-      - name: Submit to Chrome Web Store
-        env:
-          CHROME_API_VERSION: v2
-          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
-          CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
-          CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}
-          CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}
-        run: |
-          VERSION=$(node -p 'require("./package.json").version')
+        - name: Submit to stores
+          env:
+            VERSION: ${{ steps.release.outputs.version }}
 
-          pnpm exec wxt submit \
-            --chrome-zip ".output/avy-tab-switcher-$VERSION-chrome.zip"
+            CHROME_API_VERSION: v2
+            CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+            CHROME_PUBLISHER_ID: ${{ secrets.CHROME_PUBLISHER_ID }}
+            CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL: ${{ secrets.CHROME_SERVICE_ACCOUNT_CLIENT_EMAIL }}
+            CHROME_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.CHROME_SERVICE_ACCOUNT_PRIVATE_KEY }}
+
+            FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
+            FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+            FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
+            
+            run: |
+              pnpm exec wxt submit \
+              --chrome-zip ".output/avy-tab-switcher-$VERSION-chrome.zip" \
+              --firefox-zip ".output/avy-tab-switcher-$VERSION-firefox.zip" \
+              --firefox-sources-zip ".output/avy-tab-switcher-$VERSION-sources.zip"
 
       - name: Create GitHub release
         env:
